@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { ArrowLeft, Download, Loader2, Check, AlertCircle, FileText, Eye, Trash2, X, CheckSquare, Square, FileDown } from 'lucide-react';
+import { ArrowLeft, Download, Loader2, Check, AlertCircle, FileText, Eye, Trash2, X, FileDown } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import Link from 'next/link';
 import { getToolBySlug } from '@/lib/tools-data';
@@ -262,55 +262,20 @@ export default function ToolPage({
         </div>
 
         <div className="bg-white rounded-2xl border border-border p-6 sm:p-8 shadow-sm">
-          {/* Upload Zone */}
+          {/* Upload Zone with integrated file selection */}
           <FileUpload
             accept={accept}
             multiple={multiple}
             files={files}
             onFilesSelected={handleFilesSelected}
             onRemoveFile={results.length === 0 ? handleRemoveFile : undefined}
+            selectable={results.length === 0}
+            selected={selected}
+            onToggleFile={toggleFile}
+            onToggleAll={toggleSelectAll}
+            allSelected={allSelected}
+            someSelected={someSelected}
           />
-
-          {/* File List with Checkboxes (only before processing) */}
-          {files.length > 0 && results.length === 0 && (
-            <div className="mt-6 space-y-3">
-              {/* Select All Bar */}
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={toggleSelectAll}
-                  className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {allSelected ? <CheckSquare className="w-4 h-4 text-primary" /> : someSelected ? <div className="w-4 h-4 rounded border-2 border-primary bg-primary/20 flex items-center justify-center"><div className="w-2 h-2 bg-primary rounded-sm" /></div> : <Square className="w-4 h-4" />}
-                  {allSelected ? 'Deselect all' : 'Select all'}
-                </button>
-                <span className="text-xs text-muted-foreground">
-                  {selected.size} of {files.length} selected
-                </span>
-              </div>
-
-              {/* Individual File Rows with Checkboxes */}
-              {files.map((file, index) => (
-                <div
-                  key={`${file.name}-${index}`}
-                  onClick={() => toggleFile(index)}
-                  className={`flex items-center gap-3 p-4 border rounded-xl cursor-pointer transition-all ${
-                    selected.has(index) ? 'border-primary bg-primary/5' : 'border-border bg-white hover:bg-gray-50'
-                  }`}
-                >
-                  <div className="shrink-0">
-                    {selected.has(index) ? <CheckSquare className="w-5 h-5 text-primary" /> : <Square className="w-5 h-5 text-muted-foreground" />}
-                  </div>
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <FileText className="w-5 h-5 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
-                    <p className="text-xs text-muted-foreground">{file.size < 1048576 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / 1048576).toFixed(1)} MB`}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
 
           {/* Options */}
           {options && files.length > 0 && results.length === 0 && (

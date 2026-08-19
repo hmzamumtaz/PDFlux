@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useState, useRef } from 'react';
-import { Upload, FileText, X, Plus } from 'lucide-react';
+import { Upload, FileText, X, Plus, CheckSquare, Square } from 'lucide-react';
 
 interface FileUploadProps {
   accept?: string;
@@ -12,6 +12,12 @@ interface FileUploadProps {
   onRemoveFile?: (index: number) => void;
   label?: string;
   description?: string;
+  selected?: Set<number>;
+  onToggleFile?: (index: number) => void;
+  onToggleAll?: () => void;
+  allSelected?: boolean;
+  someSelected?: boolean;
+  selectable?: boolean;
 }
 
 export default function FileUpload({
@@ -23,6 +29,12 @@ export default function FileUpload({
   onRemoveFile,
   label = 'Drop your files here',
   description = 'or click to browse',
+  selected,
+  onToggleFile,
+  onToggleAll,
+  allSelected = false,
+  someSelected = false,
+  selectable = false,
 }: FileUploadProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -96,11 +108,38 @@ export default function FileUpload({
         </div>
       ) : (
         <div className="space-y-3">
+          {/* Select All Bar */}
+          {selectable && (
+            <div className="flex items-center justify-between">
+              <button
+                onClick={onToggleAll}
+                className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {allSelected ? <CheckSquare className="w-4 h-4 text-primary" /> : someSelected ? <div className="w-4 h-4 rounded border-2 border-primary bg-primary/20 flex items-center justify-center"><div className="w-2 h-2 bg-primary rounded-sm" /></div> : <Square className="w-4 h-4" />}
+                {allSelected ? 'Deselect all' : 'Select all'}
+              </button>
+              <span className="text-xs text-muted-foreground">
+                {selected ? `${selected.size} of ${files.length} selected` : `${files.length} file${files.length > 1 ? 's' : ''}`}
+              </span>
+            </div>
+          )}
+
+          {/* File Rows */}
           {files.map((file, index) => (
             <div
               key={`${file.name}-${index}`}
-              className="flex items-center gap-3 p-4 bg-white border border-border rounded-xl hover:bg-gray-50 transition-colors animate-fade-in"
+              onClick={selectable && onToggleFile ? () => onToggleFile(index) : undefined}
+              className={`flex items-center gap-3 p-4 border rounded-xl transition-all animate-fade-in ${
+                selectable
+                  ? `cursor-pointer ${selected?.has(index) ? 'border-primary bg-primary/5' : 'border-border bg-white hover:bg-gray-50'}`
+                  : 'border-border bg-white hover:bg-gray-50'
+              }`}
             >
+              {selectable && (
+                <div className="shrink-0">
+                  {selected?.has(index) ? <CheckSquare className="w-5 h-5 text-primary" /> : <Square className="w-5 h-5 text-muted-foreground" />}
+                </div>
+              )}
               <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                 <FileText className="w-5 h-5 text-primary" />
               </div>
@@ -111,13 +150,14 @@ export default function FileUpload({
               {onRemoveFile && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onRemoveFile(index); }}
-                  className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                  className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors shrink-0"
                 >
                   <X className="w-4 h-4" />
                 </button>
               )}
             </div>
           ))}
+
           {multiple && files.length < maxFiles && (
             <button
               onClick={() => inputRef.current?.click()}
