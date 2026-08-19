@@ -205,7 +205,7 @@ export default function ToolPage({
   }
 
   const IconComponent = (LucideIcons as any)[tool.icon] || LucideIcons.FileText;
-  const showTwoCol = files.length > 0 && results.length === 0;
+  const showTwoCol = files.length > 0;
 
   return (
     <div className="min-h-screen bg-white">
@@ -305,21 +305,40 @@ export default function ToolPage({
         {/* Two column: files + action panel */}
         {showTwoCol && (
           <div className="flex flex-col lg:flex-row gap-6">
-            {/* Left: File list */}
+            {/* Left: File list or Results */}
             <div className="flex-1 min-w-0 bg-white rounded-2xl border border-border p-6 shadow-sm">
-              <FileUpload
-                accept={accept}
-                multiple={multiple}
-                files={files}
-                onFilesSelected={handleFilesSelected}
-                onRemoveFile={handleRemoveFile}
-                selectable
-                selected={selected}
-                onToggleFile={toggleFile}
-                onToggleAll={toggleSelectAll}
-                allSelected={allSelected}
-                someSelected={someSelected}
-              />
+              {results.length > 0 && !processing ? (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    <Check className="w-4 h-4 text-green-500" />
+                    {results.length} file{results.length > 1 ? 's' : ''} ready
+                  </h3>
+                  {results.map((r, i) => (
+                    <ResultCard
+                      key={i}
+                      sourceFile={r.sourceFile}
+                      result={r.result}
+                      index={i}
+                      onDownload={() => handleDownloadResult(r, i)}
+                      onDelete={() => handleDeleteResult(i)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <FileUpload
+                  accept={accept}
+                  multiple={multiple}
+                  files={files}
+                  onFilesSelected={handleFilesSelected}
+                  onRemoveFile={handleRemoveFile}
+                  selectable
+                  selected={selected}
+                  onToggleFile={toggleFile}
+                  onToggleAll={toggleSelectAll}
+                  allSelected={allSelected}
+                  someSelected={someSelected}
+                />
+              )}
             </div>
 
             {/* Right: Action panel (sticky) */}
@@ -353,18 +372,49 @@ export default function ToolPage({
                     </div>
                   )}
 
-                  <button
-                    onClick={handleProcess}
-                    disabled={selected.size === 0 || processing}
-                    className={`w-full px-6 py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
-                      selected.size > 0 && !processing
-                        ? 'bg-primary hover:bg-primary-hover text-white hover:shadow-lg hover:shadow-primary/25 active:scale-[0.98]'
-                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                    }`}
-                  >
-                    {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                    {processLabel} {selected.size > 0 && `(${selected.size})`}
-                  </button>
+                  {results.length > 0 && !processing ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                          <Check className="w-4 h-4 text-green-500" />
+                          {results.length} ready
+                        </h3>
+                      </div>
+                      {results.length > 1 && (
+                        <button onClick={handleDownloadAll} className="w-full px-4 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors flex items-center justify-center gap-1.5">
+                          <FileDown className="w-3.5 h-3.5" /> Download All
+                        </button>
+                      )}
+                      <button onClick={handleReset} className="w-full px-4 py-2.5 bg-muted text-foreground rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors">
+                        Delete All
+                      </button>
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {results.map((r, i) => (
+                          <ResultCard
+                            key={i}
+                            sourceFile={r.sourceFile}
+                            result={r.result}
+                            index={i}
+                            onDownload={() => handleDownloadResult(r, i)}
+                            onDelete={() => handleDeleteResult(i)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleProcess}
+                      disabled={selected.size === 0 || processing}
+                      className={`w-full px-6 py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
+                        selected.size > 0 && !processing
+                          ? 'bg-primary hover:bg-primary-hover text-white hover:shadow-lg hover:shadow-primary/25 active:scale-[0.98]'
+                          : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      }`}
+                    >
+                      {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                      {processLabel} {selected.size > 0 && `(${selected.size})`}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
