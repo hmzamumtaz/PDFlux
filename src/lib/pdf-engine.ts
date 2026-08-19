@@ -215,17 +215,30 @@ export async function htmlToPdf(html: string): Promise<Blob> {
   const { default: html2canvas } = await import('html2canvas');
   const { jsPDF } = await import('jspdf');
 
-  const container = document.createElement('div');
-  container.innerHTML = html;
-  container.style.width = '800px';
-  container.style.padding = '40px';
-  container.style.position = 'fixed';
-  container.style.left = '-9999px';
-  container.style.background = 'white';
-  document.body.appendChild(container);
+  const renderToCanvas = async (content: string) => {
+    const container = document.createElement('div');
+    container.innerHTML = content;
+    container.style.width = '800px';
+    container.style.padding = '40px';
+    container.style.position = 'fixed';
+    container.style.left = '-9999px';
+    container.style.background = 'white';
+    document.body.appendChild(container);
+    try {
+      const canvas = await html2canvas(container, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      return canvas;
+    } finally {
+      document.body.removeChild(container);
+    }
+  };
 
-  const canvas = await html2canvas(container, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-  document.body.removeChild(container);
+  let canvas: HTMLCanvasElement;
+  try {
+    canvas = await renderToCanvas(html);
+  } catch {
+    const cleaned = html.replace(/\b(lab|lch|oklab|oklch|color-mix|hwb|hsl|rgb)\([^)]*\)/gi, '#888');
+    canvas = await renderToCanvas(cleaned);
+  }
 
   const imgData = canvas.toDataURL('image/png');
   const imgWidth = 595.28;
