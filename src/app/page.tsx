@@ -63,47 +63,47 @@ export default function Home() {
       </section>
 
       {/* Features */}
-      <section className="bg-gray-950 text-white py-20 sm:py-24">
+      <section className="bg-white py-20 sm:py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4">Why PDFlux?</h2>
-            <p className="text-gray-400 text-lg max-w-xl mx-auto">Built for speed, designed for privacy</p>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-4 text-foreground">Why PDFlux?</h2>
+            <p className="text-muted-foreground text-lg max-w-xl mx-auto">Built for speed, designed for privacy</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="p-8 rounded-2xl bg-gradient-to-b from-white/5 to-transparent border border-white/10 hover:border-white/20 transition-colors">
-              <div className="w-14 h-14 bg-indigo-500/15 rounded-2xl flex items-center justify-center mb-6">
-                <Lock className="w-7 h-7 text-indigo-400" />
+            <div className="p-8 rounded-2xl bg-gray-50 border border-border hover:border-primary/30 transition-colors">
+              <div className="w-14 h-14 bg-indigo-100 rounded-2xl flex items-center justify-center mb-6">
+                <Lock className="w-7 h-7 text-indigo-600" />
               </div>
-              <h3 className="text-lg font-semibold mb-2">Your Files Stay Private</h3>
-              <p className="text-gray-400 text-sm leading-relaxed">
+              <h3 className="text-lg font-semibold mb-2 text-foreground">Your Files Stay Private</h3>
+              <p className="text-muted-foreground text-sm leading-relaxed">
                 We never see your files. All processing happens on your device, so your documents never touch our servers. Perfect for confidential and sensitive work.
               </p>
             </div>
 
-            <div className="p-8 rounded-2xl bg-gradient-to-b from-white/5 to-transparent border border-white/10 hover:border-white/20 transition-colors">
-              <div className="w-14 h-14 bg-amber-500/15 rounded-2xl flex items-center justify-center mb-6">
-                <Zap className="w-7 h-7 text-amber-400" />
+            <div className="p-8 rounded-2xl bg-gray-50 border border-border hover:border-primary/30 transition-colors">
+              <div className="w-14 h-14 bg-amber-100 rounded-2xl flex items-center justify-center mb-6">
+                <Zap className="w-7 h-7 text-amber-600" />
               </div>
-              <h3 className="text-lg font-semibold mb-2">Instant Processing</h3>
-              <p className="text-gray-400 text-sm leading-relaxed">
+              <h3 className="text-lg font-semibold mb-2 text-foreground">Instant Processing</h3>
+              <p className="text-muted-foreground text-sm leading-relaxed">
                 No waiting for uploads. No server queues. Your PDF is processed the moment you hit the button, even large files handle in seconds.
               </p>
             </div>
 
-            <div className="p-8 rounded-2xl bg-gradient-to-b from-white/5 to-transparent border border-white/10 hover:border-white/20 transition-colors">
-              <div className="w-14 h-14 bg-green-500/15 rounded-2xl flex items-center justify-center mb-6">
-                <Sparkles className="w-7 h-7 text-green-400" />
+            <div className="p-8 rounded-2xl bg-gray-50 border border-border hover:border-primary/30 transition-colors">
+              <div className="w-14 h-14 bg-green-100 rounded-2xl flex items-center justify-center mb-6">
+                <Sparkles className="w-7 h-7 text-green-600" />
               </div>
-              <h3 className="text-lg font-semibold mb-2">No Limits. No Watermarks.</h3>
-              <p className="text-gray-400 text-sm leading-relaxed">
+              <h3 className="text-lg font-semibold mb-2 text-foreground">No Limits. No Watermarks.</h3>
+              <p className="text-muted-foreground text-sm leading-relaxed">
                 Use every tool as many times as you want. No file size restrictions. No watermarks added to your output. Completely free.
               </p>
             </div>
           </div>
 
           {/* Trust badges */}
-          <div className="mt-16 pt-8 border-t border-white/10 flex flex-wrap items-center justify-center gap-8 text-sm text-gray-500">
+          <div className="mt-16 pt-8 border-t border-border flex flex-wrap items-center justify-center gap-8 text-sm text-muted-foreground">
             <span className="flex items-center gap-2"><Globe className="w-4 h-4" /> Works in any modern browser</span>
             <span className="flex items-center gap-2"><Lock className="w-4 h-4" /> No account required</span>
             <span className="flex items-center gap-2"><Shield className="w-4 h-4" /> No data collection</span>
