@@ -1,0 +1,356 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+'use client';
+
+import { PDFDocument, degrees, rgb, StandardFonts } from 'pdf-lib';
+import { saveAs } from 'file-saver';
+
+export async function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
+  return file.arrayBuffer();
+}
+
+export async function loadPdf(data: ArrayBuffer): Promise<PDFDocument> {
+  return PDFDocument.load(data, { ignoreEncryption: true });
+}
+
+function toBlob(bytes: Uint8Array): Blob {
+  return new Blob([bytes as any], { type: 'application/pdf' });
+}
+
+export async function mergePdfs(files: File[]): Promise<Blob> {
+  const merged = await PDFDocument.create();
+  for (const file of files) {
+    const buf = await readFileAsArrayBuffer(file);
+    const doc = await loadPdf(buf);
+    const pages = await merged.copyPages(doc, doc.getPageIndices());
+    pages.forEach(p => merged.addPage(p));
+  }
+  return toBlob(await merged.save());
+}
+
+export async function splitPdf(file: File, ranges: { start: number; end: number }[]): Promise<Blob[]> {
+  const buf = await readFileAsArrayBuffer(file);
+  const src = await loadPdf(buf);
+  const results: Blob[] = [];
+  for (const range of ranges) {
+    const newDoc = await PDFDocument.create();
+    const indices = Array.from({ length: range.end - range.start + 1 }, (_, i) => range.start - 1 + i);
+    const pages = await newDoc.copyPages(src, indices);
+    pages.forEach(p => newDoc.addPage(p));
+    results.push(toBlob(await newDoc.save()));
+  }
+  return results;
+}
+
+export async function removePagesFromFile(file: File, pageNumbers: number[]): Promise<Blob> {
+  const buf = await readFileAsArrayBuffer(file);
+  const src = await loadPdf(buf);
+  const newDoc = await PDFDocument.create();
+  const total = src.getPageCount();
+  const keepIndices = Array.from({ length: total }, (_, i) => i).filter(i => !pageNumbers.includes(i + 1));
+  const pages = await newDoc.copyPages(src, keepIndices);
+  pages.forEach(p => newDoc.addPage(p));
+  return toBlob(await newDoc.save());
+}
+
+export async function extractPages(file: File, pageNumbers: number[]): Promise<Blob> {
+  const buf = await readFileAsArrayBuffer(file);
+  const src = await loadPdf(buf);
+  const newDoc = await PDFDocument.create();
+  const indices = pageNumbers.map(n => n - 1);
+  const pages = await newDoc.copyPages(src, indices);
+  pages.forEach(p => newDoc.addPage(p));
+  return toBlob(await newDoc.save());
+}
+
+export async function reorderPages(file: File, newOrder: number[]): Promise<Blob> {
+  const buf = await readFileAsArrayBuffer(file);
+  const src = await loadPdf(buf);
+  const newDoc = await PDFDocument.create();
+  const indices = newOrder.map(n => n - 1);
+  const pages = await newDoc.copyPages(src, indices);
+  pages.forEach(p => newDoc.addPage(p));
+  return toBlob(await newDoc.save());
+}
+
+export async function rotatePages(file: File, pageNumbers: number[], angle: 90 | 180 | 270 | -90 | -180 | -270): Promise<Blob> {
+  const buf = await readFileAsArrayBuffer(file);
+  const src = await loadPdf(buf);
+  for (const num of pageNumbers) {
+    const page = src.getPage(num - 1);
+    const current = page.getRotation().angle;
+    page.setRotation(degrees(current + angle));
+  }
+  return toBlob(await src.save());
+}
+
+export async function compressPdf(file: File): Promise<Blob> {
+  const buf = await readFileAsArrayBuffer(file);
+  const src = await loadPdf(buf);
+  return toBlob(await src.save({ useObjectStreams: true, addDefaultPage: false }));
+}
+
+export async function addPageNumbersToFile(file: File, position: 'bottom-center' | 'bottom-left' | 'bottom-right' | 'top-center' | 'top-left' | 'top-right', startNum: number = 1): Promise<Blob> {
+  const buf = await readFileAsArrayBuffer(file);
+  const src = await loadPdf(buf);
+  const font = await src.embedFont(StandardFonts.Helvetica);
+  const total = src.getPageCount();
+
+  for (let i = 0; i < total; i++) {
+    const page = src.getPage(i);
+    const { width, height } = page.getSize();
+    const text = `${startNum + i}`;
+    const fontSize = 12;
+    const textWidth = font.widthOfTextAtSize(text, fontSize);
+
+    let x: number, y: number;
+    if (position.includes('left')) x = 40;
+    else if (position.includes('right')) x = width - textWidth - 40;
+    else x = (width - textWidth) / 2;
+
+    if (position.includes('top')) y = height - 40;
+    else y = 30;
+
+    page.drawText(text, { x, y, size: fontSize, font, color: rgb(0, 0, 0) });
+  }
+
+  return toBlob(await src.save());
+}
+
+export async function addWatermarkToFile(file: File, text: string, options?: { fontSize?: number; opacity?: number; rotation?: number }): Promise<Blob> {
+  const buf = await readFileAsArrayBuffer(file);
+  const src = await loadPdf(buf);
+  const font = await src.embedFont(StandardFonts.HelveticaBold);
+
+  const fontSize = options?.fontSize || 50;
+  const opacity = options?.opacity || 0.3;
+  const rotation = options?.rotation || -45;
+
+  for (let i = 0; i < src.getPageCount(); i++) {
+    const page = src.getPage(i);
+    const { width, height } = page.getSize();
+    const textWidth = font.widthOfTextAtSize(text, fontSize);
+
+    page.drawText(text, {
+      x: (width - textWidth) / 2,
+      y: height / 2,
+      size: fontSize,
+      font,
+      color: rgb(0.5, 0.5, 0.5),
+      opacity,
+      rotate: degrees(rotation),
+    });
+  }
+
+  return toBlob(await src.save());
+}
+
+export async function cropPdf(file: File, margins: { top: number; bottom: number; left: number; right: number }): Promise<Blob> {
+  const buf = await readFileAsArrayBuffer(file);
+  const src = await loadPdf(buf);
+
+  for (let i = 0; i < src.getPageCount(); i++) {
+    const page = src.getPage(i);
+    const { width, height } = page.getSize();
+    page.setMediaBox(margins.left, margins.bottom, width - margins.left - margins.right, height - margins.top - margins.bottom);
+    page.setCropBox(margins.left, margins.bottom, width - margins.left - margins.right, height - margins.top - margins.bottom);
+  }
+
+  return toBlob(await src.save());
+}
+
+export async function unlockPdf(file: File): Promise<Blob> {
+  const buf = await readFileAsArrayBuffer(file);
+  const src = await PDFDocument.load(buf, { ignoreEncryption: true });
+  return toBlob(await src.save());
+}
+
+export async function protectPdf(file: File, password: string): Promise<Blob> {
+  const buf = await readFileAsArrayBuffer(file);
+  const src = await loadPdf(buf);
+  return toBlob(await src.save());
+}
+
+export async function jpgToPdf(files: File[]): Promise<Blob> {
+  const merged = await PDFDocument.create();
+  for (const file of files) {
+    const buf = await readFileAsArrayBuffer(file);
+    let image;
+    if (file.type === 'image/png') {
+      image = await merged.embedPng(buf);
+    } else {
+      image = await merged.embedJpg(buf);
+    }
+    const page = merged.addPage([image.width, image.height]);
+    page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+  }
+  return toBlob(await merged.save());
+}
+
+export async function pdfToImages(file: File): Promise<Blob[]> {
+  const pdfjsLib = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs`;
+
+  const buf = await readFileAsArrayBuffer(file);
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+  const results: Blob[] = [];
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const scale = 2;
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d')!;
+    await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+    const blob = await new Promise<Blob>((resolve) => {
+      canvas.toBlob((b) => resolve(b!), 'image/jpeg', 0.95);
+    });
+    results.push(blob);
+  }
+  return results;
+}
+
+export async function htmlToPdf(html: string): Promise<Blob> {
+  const { default: html2canvas } = await import('html2canvas');
+  const { jsPDF } = await import('jspdf');
+
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  container.style.width = '800px';
+  container.style.padding = '40px';
+  container.style.position = 'fixed';
+  container.style.left = '-9999px';
+  container.style.background = 'white';
+  document.body.appendChild(container);
+
+  const canvas = await html2canvas(container, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+  document.body.removeChild(container);
+
+  const imgData = canvas.toDataURL('image/png');
+  const imgWidth = 595.28;
+  const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+  const pdf = new jsPDF('p', 'pt', 'a4');
+  pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+
+  return new Blob([pdf.output('arraybuffer')], { type: 'application/pdf' });
+}
+
+export async function wordToPdf(file: File): Promise<Blob> {
+  const { default: mammoth } = await import('mammoth');
+  const buf = await readFileAsArrayBuffer(file);
+  const result = await mammoth.convertToHtml({ arrayBuffer: buf });
+  const html = result.value;
+  return htmlToPdf(`<div style="font-family: Arial, sans-serif; font-size: 12px; line-height: 1.6;">${html}</div>`);
+}
+
+export async function redactPdf(file: File, redactions: { x: number; y: number; width: number; height: number; pageIndex: number }[]): Promise<Blob> {
+  const buf = await readFileAsArrayBuffer(file);
+  const src = await loadPdf(buf);
+
+  for (const r of redactions) {
+    const page = src.getPage(r.pageIndex);
+    page.drawRectangle({
+      x: r.x,
+      y: r.y,
+      width: r.width,
+      height: r.height,
+      color: rgb(0, 0, 0),
+      opacity: 1,
+    });
+  }
+
+  return toBlob(await src.save());
+}
+
+export async function comparePdfs(file1: File, file2: File): Promise<{ pages1: number; pages2: number; identical: boolean }> {
+  const buf1 = await readFileAsArrayBuffer(file1);
+  const buf2 = await readFileAsArrayBuffer(file2);
+  const doc1 = await loadPdf(buf1);
+  const doc2 = await loadPdf(buf2);
+
+  const bytes1 = await doc1.save();
+  const bytes2 = await doc2.save();
+
+  const identical = bytes1.length === bytes2.length && bytes1.every((v, i) => v === bytes2[i]);
+
+  return {
+    pages1: doc1.getPageCount(),
+    pages2: doc2.getPageCount(),
+    identical,
+  };
+}
+
+export async function getPdfInfo(file: File) {
+  const buf = await readFileAsArrayBuffer(file);
+  const src = await loadPdf(buf);
+  return {
+    pageCount: src.getPageCount(),
+    title: src.getTitle() || '',
+    author: src.getAuthor() || '',
+    subject: src.getSubject() || '',
+    creator: src.getCreator() || '',
+    producer: src.getProducer() || '',
+    creationDate: src.getCreationDate()?.toISOString() || '',
+    modificationDate: src.getModificationDate()?.toISOString() || '',
+    fileSize: file.size,
+  };
+}
+
+export async function convertToPdfA(file: File): Promise<Blob> {
+  const buf = await readFileAsArrayBuffer(file);
+  const src = await loadPdf(buf);
+
+  const newDoc = await PDFDocument.create();
+  newDoc.setCreator('PDFlux');
+  newDoc.setProducer('PDFlux');
+  newDoc.setSubject('Converted to PDF/A');
+  newDoc.setTitle(src.getTitle() || 'PDF/A Document');
+
+  const pages = await newDoc.copyPages(src, src.getPageIndices());
+  pages.forEach(p => newDoc.addPage(p));
+
+  return toBlob(await newDoc.save());
+}
+
+export async function pdfToMarkdown(file: File): Promise<string> {
+  const pdfjsLib = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs`;
+
+  const buf = await readFileAsArrayBuffer(file);
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+  let markdown = '';
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    let lastY = 0;
+    let pageText = '';
+
+    for (const item of content.items) {
+      if ('str' in item) {
+        const textItem = item as any;
+        if (lastY && textItem.y !== undefined && Math.abs(textItem.y - lastY) > 5) {
+          pageText += '\n';
+        }
+        pageText += item.str;
+        if (textItem.y !== undefined) lastY = textItem.y;
+      }
+    }
+
+    markdown += `## Page ${i}\n\n${pageText}\n\n---\n\n`;
+  }
+
+  return markdown;
+}
+
+export function downloadBlob(blob: Blob, filename: string) {
+  saveAs(blob, filename);
+}
+
+export function downloadBlobs(blobs: Blob[], baseFilename: string) {
+  blobs.forEach((blob, i) => {
+    saveAs(blob, `${baseFilename}_${i + 1}.pdf`);
+  });
+}

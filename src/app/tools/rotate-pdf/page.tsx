@@ -1,0 +1,82 @@
+'use client';
+
+import ToolPage from '@/components/ToolPage';
+import { rotatePages } from '@/lib/pdf-engine';
+import { useState } from 'react';
+
+export default function RotatePdfPage() {
+  const [angle, setAngle] = useState<90 | 180 | 270>(90);
+  const [allPages, setAllPages] = useState(true);
+  const [pageInput, setPageInput] = useState('');
+
+  return (
+    <ToolPage
+      slug="rotate-pdf"
+      accept=".pdf"
+      processLabel="Rotate PDF"
+      options={
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">Rotation angle</label>
+            <div className="flex gap-2">
+              {[90, 180, 270].map((a) => (
+                <button
+                  key={a}
+                  onClick={() => setAngle(a as any)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    angle === a ? 'bg-primary text-white' : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                  }`}
+                >
+                  {a}°
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">Apply to</label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setAllPages(true)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  allPages ? 'bg-primary text-white' : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                }`}
+              >
+                All pages
+              </button>
+              <button
+                onClick={() => setAllPages(false)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  !allPages ? 'bg-primary text-white' : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                }`}
+              >
+                Specific pages
+              </button>
+            </div>
+          </div>
+          {!allPages && (
+            <input
+              type="text"
+              value={pageInput}
+              onChange={(e) => setPageInput(e.target.value)}
+              placeholder="e.g., 1, 3, 5-8"
+              className="w-full px-4 py-2.5 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            />
+          )}
+        </div>
+      }
+      onProcess={async (files) => {
+        const totalPages = 100;
+        const pages = allPages
+          ? Array.from({ length: totalPages }, (_, i) => i + 1)
+          : pageInput.split(',').flatMap(p => {
+              if (p.includes('-')) {
+                const [start, end] = p.split('-').map(Number);
+                return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+              }
+              return [parseInt(p.trim())];
+            }).filter(n => !isNaN(n));
+        return rotatePages(files[0], pages, angle);
+      }}
+    />
+  );
+}
