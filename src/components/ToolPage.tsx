@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { ArrowLeft, Download, Loader2, Check, AlertCircle, FileText, Trash2, FileDown } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import { ArrowLeft, Download, Loader2, Check, AlertCircle, FileText, Trash2, FileDown, List, LayoutGrid, ChevronLeft, ChevronRight } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import Link from 'next/link';
 import { getToolBySlug } from '@/lib/tools-data';
@@ -25,13 +25,7 @@ interface ProcessedResult {
   result: Blob;
 }
 
-function ResultCard({ sourceFile, result, index, onDownload, onDelete }: { sourceFile: File; result: Blob; index: number; onDownload: () => void; onDelete: () => void }) {
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / 1048576).toFixed(1)} MB`;
-  };
-
+function getOutputName(sourceFile: File, result: Blob) {
   const extMap: Record<string, string> = {
     'application/pdf': '.pdf',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
@@ -42,7 +36,90 @@ function ResultCard({ sourceFile, result, index, onDownload, onDelete }: { sourc
     'text/html': '.html',
   };
   const ext = extMap[result.type] || (result.type.startsWith('image/') ? '.jpg' : '.bin');
-  const outputName = sourceFile.name.replace(/\.pdf$/i, '') + ext;
+  return sourceFile.name.replace(/\.pdf$/i, '') + ext;
+}
+
+function ResultGrid({ results, currentIndex, onPrev, onNext, onDownload, onDelete }: {
+  results: ProcessedResult[];
+  currentIndex: number;
+  onPrev: () => void;
+  onNext: () => void;
+  onDownload: () => void;
+  onDelete: () => void;
+}) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [textContent, setTextContent] = useState<string | null>(null);
+  const r = results[currentIndex];
+  const isPdf = r.result.type === 'application/pdf';
+  const isImage = r.result.type.startsWith('image/');
+  const isText = r.result.type.startsWith('text/');
+
+  useEffect(() => {
+    setPreviewUrl(null);
+    setTextContent(null);
+    if (isPdf || isImage) {
+      const url = URL.createObjectURL(r.result);
+      setPreviewUrl(url);
+      return () => URL.revokeObjectURL(url);
+    } else if (isText) {
+      r.result.text().then(t => setTextContent(t.substring(0, 5000)));
+    }
+  }, [currentIndex, r.result.type, isPdf, isImage, isText, r.result]);
+
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <div className="w-full bg-gray-50 rounded-xl border border-border overflow-hidden flex items-center justify-center" style={{ minHeight: 300, maxHeight: 400 }}>
+        {isPdf && previewUrl && <iframe src={previewUrl} className="w-full h-[400px]" />}
+        {isImage && previewUrl && <img src={previewUrl} alt="Preview" className="max-w-full max-h-[400px] object-contain" />}
+        {isText && textContent && (
+          <pre className="text-xs text-foreground whitespace-pre-wrap font-mono leading-relaxed p-4 max-h-[400px] overflow-auto w-full">
+            {textContent}
+            {textContent.length >= 5000 && '\n\n... (truncated)'}
+          </pre>
+        )}
+        {!isPdf && !isImage && !textContent && (
+          <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
+            <FileText className="w-10 h-10" />
+            <p className="text-xs">Preview not available</p>
+          </div>
+        )}
+      </div>
+      <p className="text-sm font-medium text-foreground truncate max-w-full">{getOutputName(r.sourceFile, r.result)}</p>
+      <div className="flex items-center gap-3">
+        <button onClick={onDelete} className="p-2.5 rounded-xl border border-border hover:bg-red-50 hover:border-red-200 hover:text-red-600 text-muted-foreground transition-colors" title="Delete">
+          <Trash2 className="w-4 h-4" />
+        </button>
+        <button
+          onClick={onPrev}
+          disabled={currentIndex === 0}
+          className="p-2.5 rounded-xl border border-border hover:bg-gray-50 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          title="Previous"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <span className="text-xs text-muted-foreground font-medium tabular-nums">{currentIndex + 1} / {results.length}</span>
+        <button
+          onClick={onNext}
+          disabled={currentIndex === results.length - 1}
+          className="p-2.5 rounded-xl border border-border hover:bg-gray-50 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          title="Next"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+        <button onClick={onDownload} className="p-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white transition-colors" title="Download">
+          <Download className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ResultCard({ sourceFile, result, index, onDownload, onDelete }: { sourceFile: File; result: Blob; index: number; onDownload: () => void; onDelete: () => void }) {
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1048576).toFixed(1)} MB`;
+  };
 
   return (
     <div className="flex items-center gap-3 p-4 bg-white border border-border rounded-xl hover:bg-gray-50 transition-colors animate-fade-in">
@@ -50,7 +127,7 @@ function ResultCard({ sourceFile, result, index, onDownload, onDelete }: { sourc
         <FileText className="w-5 h-5 text-primary" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-foreground truncate">{outputName}</p>
+        <p className="text-sm font-medium text-foreground truncate">{getOutputName(sourceFile, result)}</p>
         <p className="text-xs text-muted-foreground">{formatSize(result.size)}</p>
       </div>
       <div className="flex items-center gap-1 shrink-0">
@@ -84,6 +161,8 @@ export default function ToolPage({
   const [error, setError] = useState<string | null>(null);
   const [processOptions, setProcessOptions] = useState<any>({});
   const [results, setResults] = useState<ProcessedResult[]>([]);
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [gridIndex, setGridIndex] = useState(0);
 
   const allSelected = files.length > 0 && selected.size === files.length;
   const someSelected = selected.size > 0 && !allSelected;
@@ -269,13 +348,29 @@ export default function ToolPage({
             )}
 
             {results.length > 0 && !processing && (
-              <div className="mt-6 space-y-3">
-                <div className="flex items-center justify-between">
+              <div className="mt-6">
+                <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                     <Check className="w-4 h-4 text-green-500" />
                     {results.length} file{results.length > 1 ? 's' : ''} ready
                   </h3>
                   <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                      <button
+                        onClick={() => setViewMode('list')}
+                        className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                        title="List view"
+                      >
+                        <List className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setViewMode('grid')}
+                        className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                        title="Grid view"
+                      >
+                        <LayoutGrid className="w-4 h-4" />
+                      </button>
+                    </div>
                     {results.length > 1 && (
                       <button onClick={handleDownloadAll} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors flex items-center gap-1.5 whitespace-nowrap">
                         <FileDown className="w-3.5 h-3.5" /> Download All
@@ -286,17 +381,29 @@ export default function ToolPage({
                     </button>
                   </div>
                 </div>
-
-                {results.map((r, i) => (
-                  <ResultCard
-                    key={i}
-                    sourceFile={r.sourceFile}
-                    result={r.result}
-                    index={i}
-                    onDownload={() => handleDownloadResult(r, i)}
-                    onDelete={() => handleDeleteResult(i)}
+                {viewMode === 'list' ? (
+                  <div className="space-y-2">
+                    {results.map((r, i) => (
+                      <ResultCard
+                        key={i}
+                        sourceFile={r.sourceFile}
+                        result={r.result}
+                        index={i}
+                        onDownload={() => handleDownloadResult(r, i)}
+                        onDelete={() => handleDeleteResult(i)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <ResultGrid
+                    results={results}
+                    currentIndex={gridIndex}
+                    onPrev={() => setGridIndex(i => Math.max(0, i - 1))}
+                    onNext={() => setGridIndex(i => Math.min(results.length - 1, i + 1))}
+                    onDownload={() => handleDownloadResult(results[gridIndex], gridIndex)}
+                    onDelete={() => { handleDeleteResult(gridIndex); setGridIndex(i => Math.min(i, results.length - 2)); }}
                   />
-                ))}
+                )}
               </div>
             )}
           </div>
@@ -308,21 +415,52 @@ export default function ToolPage({
             {/* Left: File list or Results */}
             <div className="flex-1 min-w-0 bg-white rounded-2xl border border-border p-6 shadow-sm">
               {results.length > 0 && !processing ? (
-                <div className="space-y-3">
-                  <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                    <Check className="w-4 h-4 text-green-500" />
-                    {results.length} file{results.length > 1 ? 's' : ''} ready
-                  </h3>
-                  {results.map((r, i) => (
-                    <ResultCard
-                      key={i}
-                      sourceFile={r.sourceFile}
-                      result={r.result}
-                      index={i}
-                      onDownload={() => handleDownloadResult(r, i)}
-                      onDelete={() => handleDeleteResult(i)}
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                      <Check className="w-4 h-4 text-green-500" />
+                      {results.length} file{results.length > 1 ? 's' : ''} ready
+                    </h3>
+                    <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                      <button
+                        onClick={() => setViewMode('list')}
+                        className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                        title="List view"
+                      >
+                        <List className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setViewMode('grid')}
+                        className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                        title="Grid view"
+                      >
+                        <LayoutGrid className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  {viewMode === 'list' ? (
+                    <div className="space-y-2">
+                      {results.map((r, i) => (
+                        <ResultCard
+                          key={i}
+                          sourceFile={r.sourceFile}
+                          result={r.result}
+                          index={i}
+                          onDownload={() => handleDownloadResult(r, i)}
+                          onDelete={() => handleDeleteResult(i)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <ResultGrid
+                      results={results}
+                      currentIndex={gridIndex}
+                      onPrev={() => setGridIndex(i => Math.max(0, i - 1))}
+                      onNext={() => setGridIndex(i => Math.min(results.length - 1, i + 1))}
+                      onDownload={() => handleDownloadResult(results[gridIndex], gridIndex)}
+                      onDelete={() => { handleDeleteResult(gridIndex); setGridIndex(i => Math.min(i, results.length - 2)); }}
                     />
-                  ))}
+                  )}
                 </div>
               ) : (
                 <FileUpload
