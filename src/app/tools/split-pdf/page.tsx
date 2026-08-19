@@ -1,16 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import ToolPage from '@/components/ToolPage';
-import { splitPdf } from '@/lib/pdf-engine';
-import { getPdfInfo } from '@/lib/pdf-engine';
+import PdfPreview from '@/components/PdfPreview';
+import { splitPdf, getPdfInfo } from '@/lib/pdf-engine';
 
 export default function SplitPdfPage() {
+  const [ranges, setRanges] = useState('');
   const [pdfInfo, setPdfInfo] = useState<{ totalPages: number } | null>(null);
-  const [ranges, setRanges] = useState<string>('1-1');
   const [currentFile, setCurrentFile] = useState<File | null>(null);
 
-  const handleFilesSelected = async (files: File[]) => {
+  const handleFilesSelected = useCallback(async (files: File[]) => {
     if (files[0]) {
       setCurrentFile(files[0]);
       try {
@@ -21,7 +21,7 @@ export default function SplitPdfPage() {
         setPdfInfo(null);
       }
     }
-  };
+  }, []);
 
   const parseRanges = (input: string): { start: number; end: number }[] => {
     return input.split(',').map(part => {
@@ -35,11 +35,27 @@ export default function SplitPdfPage() {
     }).filter(r => !isNaN(r.start) && !isNaN(r.end));
   };
 
+  const previewPages = useMemo(() => {
+    if (!pdfInfo) return [];
+    const parsed = parseRanges(ranges);
+    const pages: number[] = [];
+    for (const r of parsed) {
+      for (let p = r.start; p <= r.end; p++) {
+        if (p >= 1 && p <= pdfInfo.totalPages && !pages.includes(p)) {
+          pages.push(p);
+        }
+      }
+    }
+    return pages;
+  }, [pdfInfo, ranges]);
+
   return (
     <ToolPage
       slug="split-pdf"
       accept=".pdf"
+      multiple={false}
       processLabel="Split PDF"
+      onFilesSelected={handleFilesSelected}
       options={
         <div>
           <label className="block text-sm font-medium text-foreground mb-2">
@@ -54,16 +70,22 @@ export default function SplitPdfPage() {
           />
           {pdfInfo && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Total pages: {pdfInfo.totalPages}
+              Total pages: {pdfInfo.totalPages} | Pages in ranges: {previewPages.length}
             </p>
+          )}
+          {currentFile && previewPages.length > 0 && (
+            <PdfPreview
+              file={currentFile}
+              pageNumbers={previewPages}
+              label="Preview of pages in ranges:"
+            />
           )}
         </div>
       }
       onProcess={async (files) => {
         const parsed = parseRanges(ranges);
         if (parsed.length === 0) throw new Error('Please enter valid page ranges');
-        const results = await splitPdf(files[0], parsed);
-        return results;
+        return splitPdf(files[0], parsed);
       }}
     />
   );

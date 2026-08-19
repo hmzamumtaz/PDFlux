@@ -319,6 +319,30 @@ export async function pdfToMarkdown(file: File): Promise<string> {
   return pages.map((text, i) => `## Page ${i + 1}\n\n${text}\n\n---\n\n`).join('');
 }
 
+export async function renderPdfPages(file: File, pageNumbers: number[]): Promise<{ page: number; url: string; width: number; height: number }[]> {
+  const pdfjsLib = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs`;
+
+  const buf = await readFileAsArrayBuffer(file);
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+  const results: { page: number; url: string; width: number; height: number }[] = [];
+
+  for (const pageNum of pageNumbers) {
+    if (pageNum < 1 || pageNum > pdf.numPages) continue;
+    const page = await pdf.getPage(pageNum);
+    const scale = 1.5;
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d')!;
+    await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+    const url = canvas.toDataURL('image/jpeg', 0.8);
+    results.push({ page: pageNum, url, width: viewport.width, height: viewport.height });
+  }
+  return results;
+}
+
 export async function extractTextFromPdf(file: File): Promise<string[]> {
   const pdfjsLib = await import('pdfjs-dist');
   pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs`;

@@ -17,6 +17,7 @@ interface ToolPageProps {
   onProcess: (files: File[], options?: any) => Promise<Blob | Blob[]>;
   processLabel?: string;
   processAllTogether?: boolean;
+  onFilesSelected?: (files: File[]) => void;
 }
 
 interface ProcessedResult {
@@ -73,6 +74,7 @@ export default function ToolPage({
   onProcess,
   processLabel = 'Process PDF',
   processAllTogether = false,
+  onFilesSelected,
 }: ToolPageProps) {
   const tool = getToolBySlug(slug);
   const [files, setFiles] = useState<File[]>([]);
@@ -90,7 +92,8 @@ export default function ToolPage({
     setFiles(prev => [...prev, ...newFiles]);
     setResults([]);
     setError(null);
-  }, []);
+    onFilesSelected?.(newFiles);
+  }, [onFilesSelected]);
 
   const handleRemoveFile = useCallback((index: number) => {
     setFiles(prev => prev.filter((_, i) => i !== index));

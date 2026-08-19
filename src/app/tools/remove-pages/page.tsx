@@ -1,22 +1,44 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import ToolPage from '@/components/ToolPage';
+import PdfPreview from '@/components/PdfPreview';
 import { removePagesFromFile, getPdfInfo } from '@/lib/pdf-engine';
 
 export default function RemovePagesPage() {
-  const [pagesToRemove, setPagesToRemove] = useState<string>('');
+  const [pagesToRemove, setPagesToRemove] = useState('');
   const [pdfInfo, setPdfInfo] = useState<{ totalPages: number } | null>(null);
+  const [currentFile, setCurrentFile] = useState<File | null>(null);
+
+  const handleFilesSelected = useCallback(async (files: File[]) => {
+    if (files[0]) {
+      setCurrentFile(files[0]);
+      try {
+        const info = await getPdfInfo(files[0]);
+        setPdfInfo({ totalPages: info.pageCount });
+      } catch {
+        setPdfInfo(null);
+      }
+    }
+  }, []);
 
   const parsePages = (input: string): number[] => {
     return input.split(',').map(p => parseInt(p.trim())).filter(n => !isNaN(n) && n > 0);
   };
 
+  const remainingPages = useMemo(() => {
+    if (!pdfInfo) return [];
+    const remove = parsePages(pagesToRemove);
+    return Array.from({ length: pdfInfo.totalPages }, (_, i) => i + 1).filter(p => !remove.includes(p));
+  }, [pdfInfo, pagesToRemove]);
+
   return (
     <ToolPage
       slug="remove-pages"
       accept=".pdf"
+      multiple={false}
       processLabel="Remove Pages"
+      onFilesSelected={handleFilesSelected}
       options={
         <div>
           <label className="block text-sm font-medium text-foreground mb-2">
@@ -31,8 +53,15 @@ export default function RemovePagesPage() {
           />
           {pdfInfo && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Total pages: {pdfInfo.totalPages}
+              Total pages: {pdfInfo.totalPages} | Remaining: {remainingPages.length}
             </p>
+          )}
+          {currentFile && remainingPages.length > 0 && remainingPages.length < (pdfInfo?.totalPages ?? 0) && (
+            <PdfPreview
+              file={currentFile}
+              pageNumbers={remainingPages}
+              label="Preview after removal:"
+            />
           )}
         </div>
       }
