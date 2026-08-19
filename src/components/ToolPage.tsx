@@ -277,11 +277,11 @@ export default function ToolPage({
                   </h3>
                   <div className="flex items-center gap-2">
                     {results.length > 1 && (
-                      <button onClick={handleDownloadAll} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors flex items-center gap-1.5">
+                      <button onClick={handleDownloadAll} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors flex items-center gap-1.5 whitespace-nowrap">
                         <FileDown className="w-3.5 h-3.5" /> Download All
                       </button>
                     )}
-                    <button onClick={handleReset} className="px-4 py-2 bg-muted text-foreground rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors">
+                    <button onClick={handleReset} className="px-4 py-2 bg-muted text-foreground rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors whitespace-nowrap">
                       Delete All
                     </button>
                   </div>
@@ -342,7 +342,7 @@ export default function ToolPage({
             </div>
 
             {/* Right: Action panel (sticky) */}
-            <div className="w-full lg:w-80 shrink-0">
+            <div className="w-full lg:w-80 shrink-0 overflow-hidden">
               <div className="lg:sticky lg:top-8 space-y-4">
                 <div className="bg-white rounded-2xl border border-border p-6 shadow-sm">
                   {options && <div className="mb-4">{options}</div>}
@@ -356,11 +356,11 @@ export default function ToolPage({
                   )}
 
                   {progress && (
-                    <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl animate-fade-in">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                        <p className="text-xs font-medium text-blue-800">
-                          {progress.current}/{progress.total}: {progress.currentFile}
+                    <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl animate-fade-in overflow-hidden">
+                      <div className="flex items-center gap-2 mb-2 min-w-0">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600 shrink-0" />
+                        <p className="text-xs font-medium text-blue-800 min-w-0">
+                          {progress.current}/{progress.total}: <span className="block truncate">{progress.currentFile}</span>
                         </p>
                       </div>
                       <div className="w-full bg-blue-200 rounded-full h-1.5">
