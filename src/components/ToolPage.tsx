@@ -349,39 +349,41 @@ export default function ToolPage({
 
             {results.length > 0 && !processing && (
               <div className="mt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                    <Check className="w-4 h-4 text-green-500" />
-                    {results.length} file{results.length > 1 ? 's' : ''} ready
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
-                      <button
-                        onClick={() => setViewMode('list')}
-                        className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                        title="List view"
-                      >
-                        <List className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setViewMode('grid')}
-                        className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                        title="Grid view"
-                      >
-                        <LayoutGrid className="w-4 h-4" />
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                      <Check className="w-4 h-4 text-green-500" />
+                      {results.length} file{results.length > 1 ? 's' : ''} ready
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      {multiple && (
+                        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                          <button
+                            onClick={() => setViewMode('list')}
+                            className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                            title="List view"
+                          >
+                            <List className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setViewMode('grid')}
+                            className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                            title="Grid view"
+                          >
+                            <LayoutGrid className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                      {results.length > 1 && (
+                        <button onClick={handleDownloadAll} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors flex items-center gap-1.5 whitespace-nowrap">
+                          <FileDown className="w-3.5 h-3.5" /> Download All
+                        </button>
+                      )}
+                      <button onClick={handleReset} className="px-4 py-2 bg-muted text-foreground rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors whitespace-nowrap">
+                        Delete All
                       </button>
                     </div>
-                    {results.length > 1 && (
-                      <button onClick={handleDownloadAll} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors flex items-center gap-1.5 whitespace-nowrap">
-                        <FileDown className="w-3.5 h-3.5" /> Download All
-                      </button>
-                    )}
-                    <button onClick={handleReset} className="px-4 py-2 bg-muted text-foreground rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors whitespace-nowrap">
-                      Delete All
-                    </button>
                   </div>
-                </div>
-                {viewMode === 'list' ? (
+                  {viewMode === 'list' || !multiple ? (
                   <div className="space-y-2">
                     {results.map((r, i) => (
                       <ResultCard
@@ -421,24 +423,26 @@ export default function ToolPage({
                       <Check className="w-4 h-4 text-green-500" />
                       {results.length} file{results.length > 1 ? 's' : ''} ready
                     </h3>
-                    <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
-                      <button
-                        onClick={() => setViewMode('list')}
-                        className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                        title="List view"
-                      >
-                        <List className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setViewMode('grid')}
-                        className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                        title="Grid view"
-                      >
-                        <LayoutGrid className="w-4 h-4" />
-                      </button>
-                    </div>
+                    {multiple && (
+                      <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                        <button
+                          onClick={() => setViewMode('list')}
+                          className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                          title="List view"
+                        >
+                          <List className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setViewMode('grid')}
+                          className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                          title="Grid view"
+                        >
+                          <LayoutGrid className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  {viewMode === 'list' ? (
+                  {viewMode === 'list' || !multiple ? (
                     <div className="space-y-2">
                       {results.map((r, i) => (
                         <ResultCard
