@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import ToolPage from '@/components/ToolPage';
-import { pdfToMarkdown, downloadBlob } from '@/lib/pdf-engine';
+import { pdfToMarkdown } from '@/lib/pdf-engine';
 
 export default function PdfToMarkdownPage() {
   const [markdown, setMarkdown] = useState('');
@@ -17,9 +17,7 @@ export default function PdfToMarkdownPage() {
         const md = await pdfToMarkdown(files[0]);
         setMarkdown(md);
         setShowPreview(true);
-        const blob = new Blob([md], { type: 'text/markdown' });
-        downloadBlob(blob, 'document.md');
-        return blob;
+        return new Blob([md], { type: 'text/markdown' });
       }}
     >
       {showPreview && markdown && (

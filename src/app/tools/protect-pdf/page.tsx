@@ -15,6 +15,11 @@ export default function ProtectPdfPage() {
       processLabel="Protect PDF"
       options={
         <div className="space-y-3 max-w-sm">
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <p className="text-xs text-amber-700">
+              Note: Password encryption requires server-side processing. This tool currently re-saves your PDF with protection metadata. For true password protection, a server-side solution is needed.
+            </p>
+          </div>
           <div>
             <label className="block text-sm font-medium text-foreground mb-1">Password</label>
             <input

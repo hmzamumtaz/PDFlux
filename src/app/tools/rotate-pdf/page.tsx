@@ -1,7 +1,7 @@
 'use client';
 
 import ToolPage from '@/components/ToolPage';
-import { rotatePages } from '@/lib/pdf-engine';
+import { rotatePages, getPdfInfo } from '@/lib/pdf-engine';
 import { useState } from 'react';
 
 export default function RotatePdfPage() {
@@ -65,7 +65,8 @@ export default function RotatePdfPage() {
         </div>
       }
       onProcess={async (files) => {
-        const totalPages = 100;
+        const info = await getPdfInfo(files[0]);
+        const totalPages = info.pageCount;
         const pages = allPages
           ? Array.from({ length: totalPages }, (_, i) => i + 1)
           : pageInput.split(',').flatMap(p => {
@@ -74,7 +75,8 @@ export default function RotatePdfPage() {
                 return Array.from({ length: end - start + 1 }, (_, i) => start + i);
               }
               return [parseInt(p.trim())];
-            }).filter(n => !isNaN(n));
+            }).filter(n => !isNaN(n) && n >= 1 && n <= totalPages);
+        if (pages.length === 0) throw new Error('No valid pages selected');
         return rotatePages(files[0], pages, angle);
       }}
     />

@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import ToolPage from '@/components/ToolPage';
 import { compressPdf } from '@/lib/pdf-engine';
 

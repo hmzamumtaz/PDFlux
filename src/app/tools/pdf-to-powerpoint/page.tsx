@@ -1,7 +1,7 @@
 'use client';
 
 import ToolPage from '@/components/ToolPage';
-import { pdfToMarkdown, downloadBlob } from '@/lib/pdf-engine';
+import { pdfToMarkdown } from '@/lib/pdf-engine';
 
 export default function PdfToPowerpointPage() {
   return (
@@ -11,9 +11,7 @@ export default function PdfToPowerpointPage() {
       processLabel="Convert to PowerPoint"
       onProcess={async (files) => {
         const md = await pdfToMarkdown(files[0]);
-        const blob = new Blob([md], { type: 'text/markdown' });
-        downloadBlob(blob, 'converted.md');
-        return blob;
+        return new Blob([md], { type: 'text/markdown' });
       }}
     />
   );
