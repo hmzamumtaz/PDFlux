@@ -23,19 +23,19 @@ export const tools: ToolInfo[] = [
   { slug: 'ocr-pdf', name: 'OCR PDF', description: 'Extract text from scanned documents', icon: 'ScanText', category: 'Optimize PDF', color: '#84cc16' },
 
   // Convert to PDF
-  { slug: 'jpg-to-pdf', name: 'JPG to PDF', description: 'Convert images to PDF documents', icon: 'Image', category: 'Convert to PDF', color: '#f97316' },
-  { slug: 'word-to-pdf', name: 'Word to PDF', description: 'Convert DOCX documents to PDF', icon: 'FileText', category: 'Convert to PDF', color: '#2563eb' },
-  { slug: 'powerpoint-to-pdf', name: 'PowerPoint to PDF', description: 'Convert presentations to PDF', icon: 'Presentation', category: 'Convert to PDF', color: '#dc2626' },
-  { slug: 'excel-to-pdf', name: 'Excel to PDF', description: 'Convert spreadsheets to PDF', icon: 'Table', category: 'Convert to PDF', color: '#16a34a' },
-  { slug: 'html-to-pdf', name: 'HTML to PDF', description: 'Convert web pages to PDF', icon: 'Globe', category: 'Convert to PDF', color: '#7c3aed' },
+  { slug: 'jpg-to-pdf', name: 'JPG to PDF', description: 'Convert images to PDF documents', icon: 'Image', category: 'Create PDF', color: '#f97316' },
+  { slug: 'word-to-pdf', name: 'Word to PDF', description: 'Convert DOCX documents to PDF', icon: 'FileText', category: 'Create PDF', color: '#2563eb' },
+  { slug: 'powerpoint-to-pdf', name: 'PowerPoint to PDF', description: 'Convert presentations to PDF', icon: 'Presentation', category: 'Create PDF', color: '#dc2626' },
+  { slug: 'excel-to-pdf', name: 'Excel to PDF', description: 'Convert spreadsheets to PDF', icon: 'Table', category: 'Create PDF', color: '#16a34a' },
+  { slug: 'html-to-pdf', name: 'HTML to PDF', description: 'Convert web pages to PDF', icon: 'Globe', category: 'Create PDF', color: '#7c3aed' },
 
   // Convert from PDF
-  { slug: 'pdf-to-jpg', name: 'PDF to JPG', description: 'Convert PDF pages to JPG images', icon: 'FileImage', category: 'Convert from PDF', color: '#eab308' },
-  { slug: 'pdf-to-word', name: 'PDF to Word', description: 'Convert PDF to editable DOCX', icon: 'FileType', category: 'Convert from PDF', color: '#2563eb' },
-  { slug: 'pdf-to-powerpoint', name: 'PDF to PowerPoint', description: 'Convert PDF to editable PPTX', icon: 'Slideshow', category: 'Convert from PDF', color: '#dc2626' },
-  { slug: 'pdf-to-excel', name: 'PDF to Excel', description: 'Convert PDF tables to XLSX', icon: 'Grid3x3', category: 'Convert from PDF', color: '#16a34a' },
-  { slug: 'pdf-to-pdfa', name: 'PDF to PDF/A', description: 'Convert PDF to archival PDF/A format', icon: 'Archive', category: 'Convert from PDF', color: '#64748b' },
-  { slug: 'pdf-to-markdown', name: 'PDF to Markdown', description: 'Convert PDF content to Markdown text', icon: 'FileCode', category: 'Convert from PDF', color: '#0f766e' },
+  { slug: 'pdf-to-jpg', name: 'PDF to JPG', description: 'Convert PDF pages to JPG images', icon: 'FileImage', category: 'Export PDF', color: '#eab308' },
+  { slug: 'pdf-to-word', name: 'PDF to Word', description: 'Convert PDF to editable DOCX', icon: 'FileType', category: 'Export PDF', color: '#2563eb' },
+  { slug: 'pdf-to-powerpoint', name: 'PDF to PowerPoint', description: 'Convert PDF to editable PPTX', icon: 'Slideshow', category: 'Export PDF', color: '#dc2626' },
+  { slug: 'pdf-to-excel', name: 'PDF to Excel', description: 'Convert PDF tables to XLSX', icon: 'Grid3x3', category: 'Export PDF', color: '#16a34a' },
+  { slug: 'pdf-to-pdfa', name: 'PDF to PDF/A', description: 'Convert PDF to archival PDF/A format', icon: 'Archive', category: 'Export PDF', color: '#64748b' },
+  { slug: 'pdf-to-markdown', name: 'PDF to Markdown', description: 'Convert PDF content to Markdown text', icon: 'FileCode', category: 'Export PDF', color: '#0f766e' },
 
   // Edit
   { slug: 'rotate-pdf', name: 'Rotate PDF', description: 'Rotate PDF pages to any angle', icon: 'RotateCw', category: 'Edit PDF', color: '#a855f7' },
@@ -58,8 +58,8 @@ export const tools: ToolInfo[] = [
 export const categories = [
   'Organize PDF',
   'Optimize PDF',
-  'Convert to PDF',
-  'Convert from PDF',
+  'Create PDF',
+  'Export PDF',
   'Edit PDF',
   'PDF Security',
   'PDF Intelligence',

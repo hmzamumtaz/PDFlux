@@ -6,7 +6,7 @@ import { Menu, X, FileText, ChevronDown } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import { categories, getToolsByCategory, type ToolInfo } from '@/lib/tools-data';
 
-function DropdownMenu({ category, tools }: { category: string; tools: ToolInfo[] }) {
+function DropdownMenu({ category, tools, alignRight }: { category: string; tools: ToolInfo[]; alignRight?: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -18,17 +18,19 @@ function DropdownMenu({ category, tools }: { category: string; tools: ToolInfo[]
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  const label = category.replace(' PDF', '');
+
   return (
     <div ref={ref} className="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
       <button
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
       >
-        {category.replace(' PDF', '')}
+        {label}
         <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-border rounded-xl shadow-xl py-2 animate-fade-in z-50">
+        <div className={`absolute top-full mt-1 w-80 bg-white border border-border rounded-xl shadow-xl py-2 animate-fade-in z-50 ${alignRight ? 'right-0' : 'left-0'}`}>
           {tools.map((tool) => {
             const IconComp = (LucideIcons as any)[tool.icon] || LucideIcons.FileText;
             return (
@@ -41,9 +43,9 @@ function DropdownMenu({ category, tools }: { category: string; tools: ToolInfo[]
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${tool.color}12` }}>
                   <IconComp className="w-4 h-4" style={{ color: tool.color }} />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm font-medium text-foreground">{tool.name}</p>
-                  <p className="text-xs text-muted-foreground">{tool.description}</p>
+                  <p className="text-xs text-muted-foreground truncate">{tool.description}</p>
                 </div>
               </Link>
             );
@@ -56,8 +58,8 @@ function DropdownMenu({ category, tools }: { category: string; tools: ToolInfo[]
 
 const navCategories = [
   'Organize PDF',
-  'Convert to PDF',
-  'Convert from PDF',
+  'Create PDF',
+  'Export PDF',
   'Edit PDF',
 ];
 
@@ -66,7 +68,7 @@ export default function Header() {
   const [mobileCategory, setMobileCategory] = useState<string | null>(null);
 
   return (
-    <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-lg border-b border-border">
+    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-lg border-b border-border">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <Link href="/" className="flex items-center gap-2.5 group">
@@ -79,8 +81,8 @@ export default function Header() {
           </Link>
 
           <nav className="hidden lg:flex items-center gap-1">
-            {navCategories.map((cat) => (
-              <DropdownMenu key={cat} category={cat} tools={getToolsByCategory(cat)} />
+            {navCategories.map((cat, i) => (
+              <DropdownMenu key={cat} category={cat} tools={getToolsByCategory(cat)} alignRight={i >= 2} />
             ))}
             <Link href="/tools/ai-summarizer" className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
               AI Tools

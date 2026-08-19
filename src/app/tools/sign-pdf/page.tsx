@@ -162,7 +162,7 @@ export default function SignPdfPage() {
                 </button>
               </div>
 
-              <div className="text-xs text-muted-foreground">— OR type your name —</div>
+              <div className="text-xs text-muted-foreground">OR type your name</div>
 
               <input
                 type="text"

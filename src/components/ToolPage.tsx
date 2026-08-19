@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { ArrowLeft, Download, Loader2, Check, AlertCircle } from 'lucide-react';
+import * as LucideIcons from 'lucide-react';
 import Link from 'next/link';
 import { getToolBySlug } from '@/lib/tools-data';
 import FileUpload from './FileUpload';
@@ -72,8 +73,10 @@ export default function ToolPage({
     );
   }
 
+  const IconComponent = (LucideIcons as any)[tool.icon] || LucideIcons.FileText;
+
   return (
-    <div className="min-h-screen bg-gray-50/50">
+    <div className="min-h-screen bg-white">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Link
           href="/"
@@ -89,7 +92,7 @@ export default function ToolPage({
               className="w-12 h-12 rounded-2xl flex items-center justify-center"
               style={{ backgroundColor: `${tool.color}15` }}
             >
-              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: tool.color }} />
+              <IconComponent className="w-6 h-6" style={{ color: tool.color }} />
             </div>
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-foreground">{tool.name}</h1>
