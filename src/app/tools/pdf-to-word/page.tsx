@@ -8,7 +8,7 @@ export default function PdfToWordPage() {
     <ToolPage
       slug="pdf-to-word"
       accept=".pdf"
-      processLabel="Convert to Text"
+      processLabel="Convert to Word"
       onProcess={async (files) => {
         const md = await pdfToMarkdown(files[0]);
         const blob = new Blob([md], { type: 'text/markdown' });

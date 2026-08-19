@@ -165,8 +165,7 @@ export default function ToolPage({
             <span className="w-2 h-2 bg-green-500 rounded-full"></span>
             100% Private
           </span>
-          <span>Processed in your browser</span>
-          <span>No files uploaded</span>
+          <span>No files uploaded to any server</span>
         </div>
       </div>
     </div>

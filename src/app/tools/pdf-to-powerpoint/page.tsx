@@ -8,7 +8,7 @@ export default function PdfToPowerpointPage() {
     <ToolPage
       slug="pdf-to-powerpoint"
       accept=".pdf"
-      processLabel="Convert to Text"
+      processLabel="Convert to PowerPoint"
       onProcess={async (files) => {
         const md = await pdfToMarkdown(files[0]);
         const blob = new Blob([md], { type: 'text/markdown' });

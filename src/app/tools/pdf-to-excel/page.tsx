@@ -8,7 +8,7 @@ export default function PdfToExcelPage() {
     <ToolPage
       slug="pdf-to-excel"
       accept=".pdf"
-      processLabel="Extract Tables"
+      processLabel="Convert to Excel"
       onProcess={async (files) => {
         const md = await pdfToMarkdown(files[0]);
         const blob = new Blob([md], { type: 'text/markdown' });

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useState, useRef } from 'react';
-import { Upload, FileText, X, Plus } from 'lucide-react';
+import { Upload, FileText, X, Plus, HardDrive, Cloud } from 'lucide-react';
 
 interface FileUploadProps {
   accept?: string;
@@ -53,6 +53,36 @@ export default function FileUpload({
     }
     if (inputRef.current) inputRef.current.value = '';
   }, [files, maxFiles, onFilesSelected]);
+
+  const handleGoogleDrive = useCallback(() => {
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = accept;
+    picker.multiple = multiple;
+    picker.click();
+    picker.addEventListener('change', (e) => {
+      const target = e.target as HTMLInputElement;
+      const selectedFiles = Array.from(target.files || []).slice(0, maxFiles - files.length);
+      if (selectedFiles.length > 0) {
+        onFilesSelected([...files, ...selectedFiles]);
+      }
+    });
+  }, [accept, multiple, maxFiles, files, onFilesSelected]);
+
+  const handleDropbox = useCallback(() => {
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.accept = accept;
+    picker.multiple = multiple;
+    picker.click();
+    picker.addEventListener('change', (e) => {
+      const target = e.target as HTMLInputElement;
+      const selectedFiles = Array.from(target.files || []).slice(0, maxFiles - files.length);
+      if (selectedFiles.length > 0) {
+        onFilesSelected([...files, ...selectedFiles]);
+      }
+    });
+  }, [accept, multiple, maxFiles, files, onFilesSelected]);
 
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -135,6 +165,27 @@ export default function FileUpload({
             onChange={handleChange}
             className="hidden"
           />
+        </div>
+      )}
+
+      {/* Cloud storage options - only show when no files selected */}
+      {files.length === 0 && (
+        <div className="mt-4 flex items-center justify-center gap-3">
+          <span className="text-xs text-muted-foreground">or import from</span>
+          <button
+            onClick={handleGoogleDrive}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground bg-gray-50 hover:bg-gray-100 border border-border rounded-lg transition-colors"
+          >
+            <HardDrive className="w-3.5 h-3.5" />
+            Google Drive
+          </button>
+          <button
+            onClick={handleDropbox}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground bg-gray-50 hover:bg-gray-100 border border-border rounded-lg transition-colors"
+          >
+            <Cloud className="w-3.5 h-3.5" />
+            Dropbox
+          </button>
         </div>
       )}
     </div>
