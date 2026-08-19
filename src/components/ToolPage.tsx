@@ -357,7 +357,7 @@ export default function ToolPage({
                     </button>
                   )}
                   <button onClick={handleReset} className="px-4 py-2 bg-muted text-foreground rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors">
-                    Start Over
+                    Delete All
                   </button>
                 </div>
               </div>
