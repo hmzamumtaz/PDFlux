@@ -119,15 +119,23 @@ function ResultGridPreview({ results, currentIndex, onPrev, onNext, onDownload, 
       const blob = r.result;
       const type = blob.type || '';
 
-      if (type === 'application/pdf' || type === 'image/jpeg' || type === 'image/png' || type === 'image/webp') {
+      if (type === 'application/pdf') {
+        objectUrl = URL.createObjectURL(blob);
+        if (!cancelled) setPreviewUrl(objectUrl);
+      } else if (type.startsWith('image/')) {
         objectUrl = URL.createObjectURL(blob);
         if (!cancelled) setPreviewUrl(objectUrl);
       } else if (type.startsWith('text/')) {
         const text = await blob.text();
         if (!cancelled) setTextContent(text.substring(0, 5000));
       } else {
-        objectUrl = URL.createObjectURL(blob);
-        if (!cancelled) setPreviewUrl(objectUrl);
+        try {
+          const pages = await renderPdfPages(r.sourceFile, [1]);
+          if (!cancelled && pages[0]) setPreviewUrl(pages[0].url);
+        } catch {
+          objectUrl = URL.createObjectURL(blob);
+          if (!cancelled) setPreviewUrl(objectUrl);
+        }
       }
     };
 
@@ -146,11 +154,7 @@ function ResultGridPreview({ results, currentIndex, onPrev, onNext, onDownload, 
         {previewUrl && r.result.type === 'application/pdf' && <iframe src={previewUrl} className="w-full h-[400px]" />}
         {previewUrl && r.result.type.startsWith('image/') && <img src={previewUrl} alt="Preview" className="max-w-full max-h-[400px] object-contain" />}
         {previewUrl && !r.result.type.startsWith('image/') && r.result.type !== 'application/pdf' && (
-          <div className="flex flex-col items-center gap-3 py-8 px-4 text-center">
-            <FileText className="w-12 h-12 text-primary" />
-            <p className="text-sm font-medium text-foreground truncate max-w-full">{getOutputName(r.sourceFile, r.result)}</p>
-            <p className="text-xs text-muted-foreground">{(r.result.size / 1024).toFixed(1)} KB</p>
-          </div>
+          <img src={previewUrl} alt="Preview" className="max-w-full max-h-[400px] object-contain" />
         )}
         {textContent && (
           <pre className="text-xs text-foreground whitespace-pre-wrap font-mono leading-relaxed p-4 max-h-[400px] overflow-auto w-full">
@@ -158,14 +162,12 @@ function ResultGridPreview({ results, currentIndex, onPrev, onNext, onDownload, 
           </pre>
         )}
         {!hasPreview && (
-          <div className="flex flex-col items-center gap-3 py-8 px-4 text-center">
-            <FileText className="w-12 h-12 text-primary" />
-            <p className="text-sm font-medium text-foreground truncate max-w-full">{getOutputName(r.sourceFile, r.result)}</p>
-            <p className="text-xs text-muted-foreground">{(r.result.size / 1024).toFixed(1)} KB</p>
+          <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
+            <Loader2 className="w-6 h-6 animate-spin" />
+            <p className="text-xs">Loading preview...</p>
           </div>
         )}
       </div>
-      <p className="text-sm font-medium text-foreground truncate max-w-full">{getOutputName(r.sourceFile, r.result)}</p>
       <div className="flex items-center gap-3">
         <button onClick={onDelete} className="p-2.5 rounded-xl border border-border hover:bg-red-50 hover:border-red-200 hover:text-red-600 text-muted-foreground transition-colors" title="Delete">
           <Trash2 className="w-4 h-4" />
