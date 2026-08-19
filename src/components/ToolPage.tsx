@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { ArrowLeft, Download, Loader2, Check, AlertCircle, FileText, Eye, Trash2, X, FileDown } from 'lucide-react';
+import { ArrowLeft, Download, Loader2, Check, AlertCircle, FileText, Trash2, FileDown } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import Link from 'next/link';
 import { getToolBySlug } from '@/lib/tools-data';
@@ -25,89 +25,42 @@ interface ProcessedResult {
 }
 
 function ResultCard({ sourceFile, result, index, onDownload, onDelete }: { sourceFile: File; result: Blob; index: number; onDownload: () => void; onDelete: () => void }) {
-  const [showPreview, setShowPreview] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [textContent, setTextContent] = useState<string | null>(null);
-
-  const isText = result.type === 'text/markdown' || result.type === 'text/plain' || result.type === 'text/html';
-  const isPdf = result.type === 'application/pdf';
-  const isImage = result.type.startsWith('image/');
-
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / 1048576).toFixed(1)} MB`;
   };
 
-  const handlePreview = async () => {
-    if (isText) {
-      const text = await result.text();
-      setTextContent(text);
-      setShowPreview(true);
-    } else if (isPdf || isImage) {
-      const url = URL.createObjectURL(result);
-      setPreviewUrl(url);
-      setShowPreview(true);
-    }
+  const extMap: Record<string, string> = {
+    'application/pdf': '.pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+    'text/markdown': '.md',
+    'text/plain': '.txt',
+    'text/html': '.html',
   };
-
-  const closePreview = () => {
-    setShowPreview(false);
-    if (previewUrl) { URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }
-    setTextContent(null);
-  };
+  const ext = extMap[result.type] || (result.type.startsWith('image/') ? '.jpg' : '.bin');
+  const outputName = sourceFile.name.replace(/\.pdf$/i, '') + ext;
 
   return (
-    <>
-      <div className="flex items-center gap-3 p-4 bg-white border border-border rounded-xl hover:bg-gray-50 transition-colors animate-fade-in">
-        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-          <FileText className="w-5 h-5 text-primary" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground truncate">{sourceFile.name}</p>
-          <p className="text-xs text-muted-foreground">{formatSize(result.size)}</p>
-        </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {(isPdf || isText || isImage) && (
-            <button onClick={handlePreview} className="p-2 rounded-lg hover:bg-blue-50 text-muted-foreground hover:text-blue-600 transition-colors" title="Preview">
-              <Eye className="w-4 h-4" />
-            </button>
-          )}
-          <button onClick={onDownload} className="p-2 rounded-lg hover:bg-green-50 text-muted-foreground hover:text-green-600 transition-colors" title="Download">
-            <Download className="w-4 h-4" />
-          </button>
-          <button onClick={onDelete} className="p-2 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors" title="Delete">
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
+    <div className="flex items-center gap-3 p-4 bg-white border border-border rounded-xl hover:bg-gray-50 transition-colors animate-fade-in">
+      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+        <FileText className="w-5 h-5 text-primary" />
       </div>
-
-      {showPreview && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={closePreview}>
-          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-4 border-b border-border">
-              <h3 className="font-semibold text-foreground">{sourceFile.name}</h3>
-              <button onClick={closePreview} className="p-2 rounded-lg hover:bg-muted transition-colors"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="flex-1 overflow-auto p-4">
-              {isPdf && previewUrl && <iframe src={previewUrl} className="w-full h-[70vh] rounded-lg border border-border" />}
-              {isImage && previewUrl && <img src={previewUrl} alt="Preview" className="max-w-full max-h-[70vh] mx-auto rounded-lg" />}
-              {isText && textContent && (
-                <pre className="text-sm text-foreground whitespace-pre-wrap font-mono leading-relaxed bg-gray-50 p-4 rounded-xl max-h-[70vh] overflow-auto">
-                  {textContent.substring(0, 10000)}
-                  {textContent.length > 10000 && '\n\n... (truncated)'}
-                </pre>
-              )}
-            </div>
-            <div className="p-4 border-t border-border flex justify-end">
-              <button onClick={() => { onDownload(); closePreview(); }} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors flex items-center gap-2">
-                <Download className="w-4 h-4" /> Download
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-foreground truncate">{outputName}</p>
+        <p className="text-xs text-muted-foreground">{formatSize(result.size)}</p>
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        <button onClick={onDownload} className="p-2 rounded-lg hover:bg-green-50 text-muted-foreground hover:text-green-600 transition-colors" title="Download">
+          <Download className="w-4 h-4" />
+        </button>
+        <button onClick={onDelete} className="p-2 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors" title="Delete">
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
   );
 }
 
