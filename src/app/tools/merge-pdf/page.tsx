@@ -7,9 +7,9 @@ export default function MergePdfPage() {
   return (
     <ToolPage
       slug="merge-pdf"
-      multiple
       accept=".pdf"
       processLabel="Merge PDFs"
+      processAllTogether
       onProcess={async (files) => mergePdfs(files)}
     />
   );
