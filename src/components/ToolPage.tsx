@@ -210,7 +210,16 @@ export default function ToolPage({
   }, [files, selected, onProcess, processOptions, processAllTogether]);
 
   const handleDownloadResult = useCallback((result: ProcessedResult, index: number) => {
-    const ext = result.result.type === 'application/pdf' ? '.pdf' : result.result.type.startsWith('image/') ? '.jpg' : result.result.type === 'text/markdown' ? '.md' : '.txt';
+    const extMap: Record<string, string> = {
+      'application/pdf': '.pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+      'text/markdown': '.md',
+      'text/plain': '.txt',
+      'text/html': '.html',
+    };
+    const ext = extMap[result.result.type] || (result.result.type.startsWith('image/') ? '.jpg' : '.bin');
     const baseName = result.sourceFile.name.replace(/\.pdf$/i, '');
     downloadBlob(result.result, `${baseName}${ext}`);
   }, []);

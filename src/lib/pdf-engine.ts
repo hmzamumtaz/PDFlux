@@ -315,12 +315,17 @@ export async function convertToPdfA(file: File): Promise<Blob> {
 }
 
 export async function pdfToMarkdown(file: File): Promise<string> {
+  const pages = await extractTextFromPdf(file);
+  return pages.map((text, i) => `## Page ${i + 1}\n\n${text}\n\n---\n\n`).join('');
+}
+
+export async function extractTextFromPdf(file: File): Promise<string[]> {
   const pdfjsLib = await import('pdfjs-dist');
   pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs`;
 
   const buf = await readFileAsArrayBuffer(file);
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
-  let markdown = '';
+  const pages: string[] = [];
 
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
@@ -338,11 +343,101 @@ export async function pdfToMarkdown(file: File): Promise<string> {
         if (textItem.y !== undefined) lastY = textItem.y;
       }
     }
-
-    markdown += `## Page ${i}\n\n${pageText}\n\n---\n\n`;
+    pages.push(pageText);
   }
+  return pages;
+}
 
-  return markdown;
+export async function pdfToWord(file: File): Promise<Blob> {
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel, PageBreak } = await import('docx');
+  const pages = await extractTextFromPdf(file);
+
+  const children: any[] = [];
+  pages.forEach((pageText, i) => {
+    if (i > 0) {
+      children.push(new Paragraph({ children: [new PageBreak()] }));
+    }
+    const lines = pageText.split('\n');
+    lines.forEach((line, lineIdx) => {
+      if (lineIdx === 0 && line.trim()) {
+        children.push(new Paragraph({
+          heading: HeadingLevel.HEADING_2,
+          children: [new TextRun({ text: `Page ${i + 1}`, bold: true })],
+        }));
+      }
+      children.push(new Paragraph({
+        children: [new TextRun({ text: line })],
+      }));
+    });
+  });
+
+  const doc = new Document({
+    sections: [{ properties: {}, children }],
+  });
+
+  const blob = await Packer.toBlob(doc);
+  return blob;
+}
+
+export async function pdfToExcel(file: File): Promise<Blob> {
+  const ExcelJS = await import('exceljs');
+  const pages = await extractTextFromPdf(file);
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'PDFlux';
+  workbook.created = new Date();
+
+  pages.forEach((pageText, i) => {
+    const sheet = workbook.addWorksheet(`Page ${i + 1}`);
+    sheet.columns = [{ header: 'Text Content', key: 'text', width: 80 }];
+
+    const lines = pageText.split('\n').filter(l => l.trim());
+    lines.forEach(line => {
+      sheet.addRow({ text: line });
+    });
+
+    if (lines.length === 0) {
+      sheet.addRow({ text: '(empty page)' });
+    }
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer() as ArrayBuffer;
+  return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+export async function pdfToPowerpoint(file: File): Promise<Blob> {
+  const PptxGenJS = (await import('pptxgenjs')).default;
+  const pages = await extractTextFromPdf(file);
+
+  const pptx = new PptxGenJS();
+  pptx.author = 'PDFlux';
+  pptx.title = file.name.replace(/\.pdf$/i, '');
+
+  pages.forEach((pageText, i) => {
+    const slide = pptx.addSlide();
+    slide.addText(`Page ${i + 1}`, {
+      x: 0.5,
+      y: 0.3,
+      w: '90%',
+      fontSize: 18,
+      bold: true,
+      color: '333333',
+    });
+
+    slide.addText(pageText || '(empty page)', {
+      x: 0.5,
+      y: 1.0,
+      w: '90%',
+      h: '80%',
+      fontSize: 11,
+      color: '444444',
+      valign: 'top',
+      wrap: true,
+    });
+  });
+
+  const buffer = await pptx.write({ outputType: 'arraybuffer' }) as ArrayBuffer;
+  return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
 }
 
 export function downloadBlob(blob: Blob, filename: string) {
