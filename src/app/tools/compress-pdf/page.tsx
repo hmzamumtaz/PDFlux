@@ -166,6 +166,22 @@ export default function CompressPdfPage() {
                 </div>
               )}
 
+              {targetValid && !noCompressionNeeded && !notPossible && (
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3 animate-fade-in">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="text-xs text-amber-700 leading-relaxed">
+                    <p className="font-semibold mb-1">Quality reduction warning</p>
+                    <p>
+                      {Math.round((1 - targetBytes / originalSize) * 100) >= 70
+                        ? 'This is a very aggressive compression. Text may become blurry, images will lose significant detail, and the PDF will become image-based (text will no longer be selectable).'
+                        : Math.round((1 - targetBytes / originalSize) * 100) >= 40
+                        ? 'This level of compression will reduce image quality and may make text slightly less sharp. The PDF will become image-based (text will no longer be selectable).'
+                        : 'Some image quality reduction will occur. Text and layout will remain mostly intact.'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {error && (
                 <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
                   <AlertCircle className="w-5 h-5 text-destructive shrink-0" />
