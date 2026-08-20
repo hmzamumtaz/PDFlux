@@ -325,21 +325,90 @@ export async function redactPdf(file: File, redactions: { x: number; y: number; 
   return toBlob(await src.save());
 }
 
-export async function comparePdfs(file1: File, file2: File): Promise<{ pages1: number; pages2: number; identical: boolean }> {
-  const buf1 = await readFileAsArrayBuffer(file1);
-  const buf2 = await readFileAsArrayBuffer(file2);
-  const doc1 = await loadPdf(buf1);
-  const doc2 = await loadPdf(buf2);
+export interface CompareResult {
+  file1: { name: string; pages: number; fileSize: number; title: string; author: string; creator: string; pageWidths: number[]; pageHeights: number[]; textByPage: string[] };
+  file2: { name: string; pages: number; fileSize: number; title: string; author: string; creator: string; pageWidths: number[]; pageHeights: number[]; textByPage: string[] };
+  identical: boolean;
+  pagesSame: boolean;
+  textSimilarity: number;
+  differingPages: number[];
+}
 
-  const bytes1 = await doc1.save();
-  const bytes2 = await doc2.save();
+export async function comparePdfs(file1: File, file2: File): Promise<CompareResult> {
+  const pdfjsLib = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs`;
 
-  const identical = bytes1.length === bytes2.length && bytes1.every((v, i) => v === bytes2[i]);
+  async function extractInfo(file: File) {
+    const buf = await readFileAsArrayBuffer(file);
+    const doc = await loadPdf(buf);
+    const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+
+    const meta = await doc.getTitle()?.length ? doc : null;
+    const title = doc.getTitle() || '';
+    const author = doc.getAuthor() || '';
+    const creator = doc.getCreator() || '';
+
+    const pageWidths: number[] = [];
+    const pageHeights: number[] = [];
+    const textByPage: string[] = [];
+
+    for (let i = 0; i < doc.getPageCount(); i++) {
+      const pg = doc.getPage(i);
+      const { width, height } = pg.getSize();
+      pageWidths.push(Math.round(width * 100) / 100);
+      pageHeights.push(Math.round(height * 100) / 100);
+
+      const pdfPage = await pdfDoc.getPage(i + 1);
+      const content = await pdfPage.getTextContent();
+      const text = content.items.map(item => 'str' in item ? item.str : '').join(' ');
+      textByPage.push(text);
+    }
+
+    return {
+      name: file.name,
+      pages: doc.getPageCount(),
+      fileSize: file.size,
+      title,
+      author,
+      creator,
+      pageWidths,
+      pageHeights,
+      textByPage,
+    };
+  }
+
+  const [info1, info2] = await Promise.all([extractInfo(file1), extractInfo(file2)]);
+
+  const identical = JSON.stringify(info1) === JSON.stringify(info2);
+  const pagesSame = info1.pages === info2.pages && info1.pageWidths.join(',') === info2.pageWidths.join(',') && info1.pageHeights.join(',') === info2.pageHeights.join(',');
+
+  const maxPages = Math.max(info1.textByPage.length, info2.textByPage.length);
+  const differingPages: number[] = [];
+  let totalSimilarity = 0;
+
+  for (let i = 0; i < maxPages; i++) {
+    const t1 = info1.textByPage[i] || '';
+    const t2 = info2.textByPage[i] || '';
+    if (t1 === t2) {
+      totalSimilarity += 100;
+    } else {
+      differingPages.push(i + 1);
+      const words1 = t1.split(/\s+/).filter(Boolean);
+      const words2 = t2.split(/\s+/).filter(Boolean);
+      const set = new Set([...words1, ...words2]);
+      const overlap = words1.filter(w => words2.includes(w)).length;
+      totalSimilarity += set.size > 0 ? Math.round((overlap / set.size) * 100) : 0;
+    }
+  }
+  const textSimilarity = maxPages > 0 ? Math.round(totalSimilarity / maxPages) : 100;
 
   return {
-    pages1: doc1.getPageCount(),
-    pages2: doc2.getPageCount(),
+    file1: info1,
+    file2: info2,
     identical,
+    pagesSame,
+    textSimilarity,
+    differingPages,
   };
 }
 
