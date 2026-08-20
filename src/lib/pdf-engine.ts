@@ -593,9 +593,35 @@ export async function summarizePdf(file: File, options: SummaryOptions, onProgre
   // Sort by original document order for coherence
   selected.sort((a, b) => a.i - b.i);
 
-  const summary = selected.map(s => sentences[s.i]).join(' ');
-  const wordCount = tokenize(summary).length;
+  const extractedText = selected.map(s => sentences[s.i]).join(' ');
 
+  // Abstractive summarization via free LLM
+  onProgress?.('Generating summary with AI...');
+  try {
+    const prompt = `Summarize the following text in about ${options.wordCount} words. Paraphrase it in your own words — do not copy sentences directly. Be clear, concise, and accurate:\n\n${extractedText}`;
+    const res = await fetch('https://text.pollinations.ai/openai/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'openai',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const aiText = data?.choices?.[0]?.message?.content;
+      if (aiText && aiText.trim().length > 50) {
+        const wordCount = tokenize(aiText).length;
+        return { summary: aiText.trim(), wordCount, originalWordCount };
+      }
+    }
+  } catch { /* fall through to extractive */ }
+
+  // Extractive fallback if LLM fails
+  const summary = extractedText;
+  const wordCount = tokenize(summary).length;
   return { summary, wordCount, originalWordCount };
 }
 
