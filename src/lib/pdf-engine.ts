@@ -581,9 +581,22 @@ export async function createPdfFromText(text: string, title?: string): Promise<B
 }
 
 async function translateChunk(text: string, from: string, to: string): Promise<string> {
+  // Google Translate free unlimited API (no key needed)
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${from}&tl=${to}&dt=t&q=${encodeURIComponent(text)}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data[0]) {
+        return data[0].map((s: any[]) => s[0]).join('');
+      }
+    }
+  } catch { /* fall through */ }
+
+  // MyMemory fallback
   const langpair = `${from}|${to}`;
-  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langpair}`;
-  const res = await fetch(url);
+  const memUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langpair}`;
+  const res = await fetch(memUrl);
   if (!res.ok) throw new Error(`Translation API error: ${res.status}`);
   const data = await res.json();
   if (data.responseStatus === 200 || data.responseStatus === '200') {
@@ -595,7 +608,7 @@ async function translateChunk(text: string, from: string, to: string): Promise<s
 export async function translateText(text: string, fromLang: string, toLang: string, onProgress?: (current: number, total: number) => void): Promise<string> {
   const from = fromLang === 'Auto' ? 'autodetect' : (LANG_CODES[fromLang] || fromLang);
   const to = LANG_CODES[toLang] || toLang;
-  const chunkSize = 350;
+  const chunkSize = 4500;
   const sentences = text.replace(/\n+/g, ' ').split(/(?<=[.!?])\s+/);
   const chunks: string[] = [];
   let current = '';
