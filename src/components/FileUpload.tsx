@@ -61,10 +61,10 @@ export default function FileUpload({
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []).slice(0, maxFiles - files.length);
     if (selectedFiles.length > 0) {
-      onFilesSelected([...files, ...selectedFiles]);
+      onFilesSelected(selectedFiles);
     }
     if (inputRef.current) inputRef.current.value = '';
-  }, [files, maxFiles, onFilesSelected]);
+  }, [files.length, maxFiles, onFilesSelected]);
 
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
