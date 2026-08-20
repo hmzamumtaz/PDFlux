@@ -115,7 +115,7 @@ export default function FileUpload({
                 onClick={onToggleAll}
                 className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
               >
-                {allSelected ? <CheckSquare className="w-4 h-4 text-primary" /> : someSelected ? <div className="w-4 h-4 rounded border-2 border-primary bg-primary/20 flex items-center justify-center"><div className="w-2 h-2 bg-primary rounded-sm" /></div> : <Square className="w-4 h-4" />}
+                {allSelected ? <CheckSquare className="w-4 h-4 text-primary" /> : <Square className="w-4 h-4" />}
                 {allSelected ? 'Deselect all' : 'Select all'}
               </button>
               <span className="text-xs text-muted-foreground">
