@@ -537,6 +537,12 @@ export async function createPdfFromText(text: string, title?: string): Promise<B
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const boldFont = await doc.embedFont(StandardFonts.HelveticaBold);
 
+  // Replace characters that WinAnsi can't encode
+  const sanitize = (s: string) => s
+    .replace(/[\u2500-\u257F\u2580-\u259F\u25A0-\u25FF\u2600-\u26FF\u2700-\u27BF\u2B50-\u2B55\u2300-\u23FF\u2190-\u21FF\u2000-\u206F]/g, '-')
+    .replace(/[\u00A0]/g, ' ')
+    .replace(/[^\x20-\x7E\xA0-\xFF]/g, '-');
+
   const pageWidth = 595.28;
   const pageHeight = 841.89;
   const margin = 50;
@@ -548,7 +554,7 @@ export async function createPdfFromText(text: string, title?: string): Promise<B
   let y = pageHeight - margin;
 
   for (const para of paragraphs) {
-    const words = para.split(/\s+/);
+    const words = sanitize(para).split(/\s+/);
     let line = '';
 
     for (const word of words) {
