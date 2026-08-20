@@ -716,3 +716,80 @@ export function downloadBlobs(blobs: Blob[], baseFilename: string) {
     saveAs(blob, `${baseFilename}_${i + 1}.pdf`);
   });
 }
+
+export interface OcrResult {
+  blob: Blob;
+  pages: number;
+  totalChars: number;
+}
+
+export async function ocrPdf(file: File, onProgress?: (page: number, total: number, msg: string) => void): Promise<OcrResult> {
+  const Tesseract = await import('tesseract.js');
+  const pdfjsLib = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs`;
+
+  const buf = await readFileAsArrayBuffer(file);
+  const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+  const numPages = pdfDoc.numPages;
+  const doc = await PDFDocument.create();
+  let totalChars = 0;
+
+  for (let i = 1; i <= numPages; i++) {
+    onProgress?.(i, numPages, `Scanning page ${i} of ${numPages}...`);
+
+    const page = await pdfDoc.getPage(i);
+    const viewport = page.getViewport({ scale: 3 });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d')!;
+    await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+
+    const { data } = await Tesseract.recognize(canvas, 'eng', {
+      logger: (m: any) => {
+        if (m.status === 'recognizing text') {
+          onProgress?.(i, numPages, `Page ${i}: ${Math.round((m.progress || 0) * 100)}% recognized`);
+        }
+      },
+    });
+
+    totalChars += data.text.length;
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const imgBytes = Uint8Array.from(atob(imgData.split(',')[1]), c => c.charCodeAt(0));
+    const img = await doc.embedJpg(imgBytes);
+
+    const pw = viewport.width * 0.75;
+    const ph = viewport.height * 0.75;
+    const pdfPage = doc.addPage([pw, ph]);
+    pdfPage.drawImage(img, { x: 0, y: 0, width: pw, height: ph });
+
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const blocks = (data as any).blocks || [];
+    for (const block of blocks) {
+      const lines = block.lines || [];
+      for (const line of lines) {
+        const words = line.words || [];
+        for (const word of words) {
+          const text = word.text;
+          if (!text.trim()) continue;
+          const bx = word.bbox.x0 * 0.75;
+          const by = ph - word.bbox.y1 * 0.75;
+          const bw = (word.bbox.x1 - word.bbox.x0) * 0.75;
+          const bh = (word.bbox.y1 - word.bbox.y0) * 0.75;
+          const fontSize = Math.max(6, Math.min(bh * 0.8, 40));
+          pdfPage.drawText(text, {
+            x: bx,
+            y: by,
+            size: fontSize,
+            font,
+            color: rgb(0, 0, 0),
+            opacity: 0.01,
+          });
+        }
+      }
+    }
+  }
+
+  return { blob: toBlob(await doc.save()), pages: numPages, totalChars };
+}
