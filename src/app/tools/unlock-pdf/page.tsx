@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import { ArrowLeft, Loader2, Unlock, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Unlock, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
 import { isPdfPasswordProtected, unlockPdf, downloadBlob } from '@/lib/pdf-engine';
@@ -10,6 +10,8 @@ export default function UnlockPdfPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [checking, setChecking] = useState(false);
   const [isProtected, setIsProtected] = useState<boolean | null>(null);
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,6 +25,7 @@ export default function UnlockPdfPage() {
     setIsProtected(null);
     setDone(false);
     setError(null);
+    setPassword('');
     setChecking(true);
     try {
       const protected_ = await isPdfPasswordProtected(file);
@@ -37,22 +40,29 @@ export default function UnlockPdfPage() {
 
   const handleUnlock = useCallback(async () => {
     if (!fileRef.current) return;
+    if (!password) { setError('Please enter the current password'); return; }
     setUnlocking(true);
     setError(null);
     try {
-      const blob = await unlockPdf(fileRef.current);
+      const blob = await unlockPdf(fileRef.current, password);
       downloadBlob(blob, fileRef.current.name.replace(/\.pdf$/i, '_unlocked.pdf'));
       setDone(true);
     } catch (err: any) {
-      setError(err.message || 'Unlock failed. The file may require a password.');
+      const msg = err.message || '';
+      if (msg.includes('password') || msg.includes('Invalid')) {
+        setError('Incorrect password. Please try again.');
+      } else {
+        setError(msg || 'Unlock failed. Please check the password and try again.');
+      }
     } finally {
       setUnlocking(false);
     }
-  }, []);
+  }, [password]);
 
   const handleReset = useCallback(() => {
     setFiles([]);
     setIsProtected(null);
+    setPassword('');
     setDone(false);
     setError(null);
     fileRef.current = null;
@@ -106,11 +116,27 @@ export default function UnlockPdfPage() {
           )}
 
           {!checking && isProtected === true && !done && (
-            <div className="mt-6 space-y-4">
+            <div className="mt-6 space-y-4 max-w-sm">
               <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                <p className="text-sm font-medium text-amber-800">This PDF is password protected. Click below to remove the protection.</p>
+                <p className="text-sm font-medium text-amber-800">This PDF is password protected. Enter the current password to remove protection.</p>
               </div>
-              <button onClick={handleUnlock} disabled={unlocking} className="px-8 py-3.5 rounded-xl font-semibold text-sm transition-all flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white hover:shadow-lg hover:shadow-amber-500/25 active:scale-[0.98] disabled:opacity-50">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">Current password</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
+                    placeholder="Enter the PDF password"
+                    className="w-full px-4 py-2.5 pr-10 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <button onClick={handleUnlock} disabled={unlocking || !password} className="px-8 py-3.5 rounded-xl font-semibold text-sm transition-all flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white hover:shadow-lg hover:shadow-amber-500/25 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed">
                 {unlocking ? <><Loader2 className="w-4 h-4 animate-spin" /> Unlocking...</> : <><Unlock className="w-4 h-4" /> Unlock PDF</>}
               </button>
             </div>
@@ -122,7 +148,7 @@ export default function UnlockPdfPage() {
                 <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm font-semibold text-green-800 mb-1">PDF unlocked successfully</p>
-                  <p className="text-sm text-green-700">The unlocked file has been downloaded. Password protection has been removed.</p>
+                  <p className="text-sm text-green-700">The unlocked file has been downloaded. It will open without requiring a password.</p>
                 </div>
               </div>
             </div>

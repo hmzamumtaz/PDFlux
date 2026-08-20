@@ -158,10 +158,33 @@ export async function cropPdf(file: File, margins: { top: number; bottom: number
   return toBlob(await src.save());
 }
 
-export async function unlockPdf(file: File): Promise<Blob> {
+export async function unlockPdf(file: File, password: string): Promise<Blob> {
+  const pdfjsLib = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs`;
+
   const buf = await readFileAsArrayBuffer(file);
-  const src = await PDFDocument.load(buf, { ignoreEncryption: true });
-  return toBlob(await src.save());
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf), password }).promise;
+  const unlocked = await PDFDocument.create();
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const scale = 2;
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d')!;
+    await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+
+    const imgData = canvas.toDataURL('image/png');
+    const imgBytes = Uint8Array.from(atob(imgData.split(',')[1]), c => c.charCodeAt(0));
+    const img = await unlocked.embedPng(imgBytes);
+
+    const pdfPage = unlocked.addPage([viewport.width, viewport.height]);
+    pdfPage.drawImage(img, { x: 0, y: 0, width: viewport.width, height: viewport.height });
+  }
+
+  return toBlob(await unlocked.save());
 }
 
 export async function isPdfPasswordProtected(file: File): Promise<boolean> {
