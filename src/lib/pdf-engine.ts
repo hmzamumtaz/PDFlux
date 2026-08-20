@@ -89,6 +89,72 @@ export async function compressPdf(file: File): Promise<Blob> {
   return toBlob(await src.save({ useObjectStreams: true, addDefaultPage: false }));
 }
 
+export interface CompressResult {
+  blob: Blob;
+  originalSize: number;
+  compressedSize: number;
+  targetSize: number;
+  achieved: boolean;
+  quality: number;
+  pages: number;
+}
+
+export async function compressToTargetSize(file: File, targetBytes: number, onProgress?: (msg: string) => void): Promise<CompressResult> {
+  const pdfjsLib = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs`;
+
+  const originalSize = file.size;
+  const buf = await readFileAsArrayBuffer(file);
+  const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+  const numPages = pdfDoc.numPages;
+
+  if (targetBytes >= originalSize) {
+    return { blob: new Blob([buf], { type: 'application/pdf' }), originalSize, compressedSize: originalSize, targetSize: targetBytes, achieved: true, quality: 1, pages: numPages };
+  }
+
+  async function renderAndBuild(scale: number): Promise<Blob> {
+    const doc = await PDFDocument.create();
+    for (let i = 1; i <= numPages; i++) {
+      const page = await pdfDoc.getPage(i);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d')!;
+      await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+      const imgData = canvas.toDataURL('image/jpeg', qualityForScale(scale));
+      const imgBytes = Uint8Array.from(atob(imgData.split(',')[1]), c => c.charCodeAt(0));
+      const img = await doc.embedJpg(imgBytes);
+      const pdfPage = doc.addPage([viewport.width, viewport.height]);
+      pdfPage.drawImage(img, { x: 0, y: 0, width: viewport.width, height: viewport.height });
+    }
+    return toBlob(await doc.save());
+  }
+
+  function qualityForScale(scale: number): number {
+    if (scale >= 2) return 0.92;
+    if (scale >= 1.5) return 0.85;
+    if (scale >= 1.2) return 0.75;
+    if (scale >= 1) return 0.65;
+    if (scale >= 0.8) return 0.55;
+    if (scale >= 0.6) return 0.45;
+    return 0.35;
+  }
+
+  const scales = [2, 1.8, 1.6, 1.4, 1.2, 1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4];
+
+  for (const scale of scales) {
+    onProgress?.(`Trying quality level ${Math.round(qualityForScale(scale) * 100)}%...`);
+    const blob = await renderAndBuild(scale);
+    if (blob.size <= targetBytes) {
+      return { blob, originalSize, compressedSize: blob.size, targetSize: targetBytes, achieved: true, quality: qualityForScale(scale), pages: numPages };
+    }
+  }
+
+  const finalBlob = await renderAndBuild(0.4);
+  return { blob: finalBlob, originalSize, compressedSize: finalBlob.size, targetSize: targetBytes, achieved: finalBlob.size <= targetBytes, quality: 0.35, pages: numPages };
+}
+
 export async function addPageNumbersToFile(file: File, position: 'bottom-center' | 'bottom-left' | 'bottom-right' | 'top-center' | 'top-left' | 'top-right', startNum: number = 1): Promise<Blob> {
   const buf = await readFileAsArrayBuffer(file);
   const src = await loadPdf(buf);
