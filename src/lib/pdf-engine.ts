@@ -174,7 +174,7 @@ export async function isPdfPasswordProtected(file: File): Promise<boolean> {
   }
 }
 
-export async function protectPdf(file: File, userPassword: string, ownerPassword?: string, permissions?: { allowPrinting?: boolean; allowModifying?: boolean; allowCopying?: boolean; allowFillingForms?: boolean }): Promise<Blob> {
+export async function protectPdf(file: File, userPassword: string, ownerPassword?: string, permissions?: { allowPrinting?: boolean; allowModifying?: boolean; allowCopying?: boolean; allowAnnotating?: boolean; allowFillingForms?: boolean; allowExtraction?: boolean; allowAssembly?: boolean }): Promise<Blob> {
   const { encryptPDF } = await import('@pdfsmaller/pdf-encrypt-lite');
   const buf = await readFileAsArrayBuffer(file);
   const pdfBytes = new Uint8Array(buf);
@@ -184,15 +184,12 @@ export async function protectPdf(file: File, userPassword: string, ownerPassword
   };
   if (permissions) {
     if (permissions.allowPrinting !== undefined) options.allowPrinting = permissions.allowPrinting;
-    if (permissions.allowModifying !== undefined) {
-      options.allowModifying = permissions.allowModifying;
-      options.allowAnnotating = permissions.allowModifying;
-    }
-    if (permissions.allowCopying !== undefined) {
-      options.allowCopying = permissions.allowCopying;
-      options.allowExtraction = permissions.allowCopying;
-    }
+    if (permissions.allowModifying !== undefined) options.allowModifying = permissions.allowModifying;
+    if (permissions.allowCopying !== undefined) options.allowCopying = permissions.allowCopying;
+    if (permissions.allowAnnotating !== undefined) options.allowAnnotating = permissions.allowAnnotating;
     if (permissions.allowFillingForms !== undefined) options.allowFillingForms = permissions.allowFillingForms;
+    if (permissions.allowExtraction !== undefined) options.allowExtraction = permissions.allowExtraction;
+    if (permissions.allowAssembly !== undefined) options.allowAssembly = permissions.allowAssembly;
   }
   const encrypted = await encryptPDF(pdfBytes, userPassword, options);
   return new Blob([new Uint8Array(encrypted)], { type: 'application/pdf' });

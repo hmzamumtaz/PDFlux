@@ -126,6 +126,10 @@ export default function ProtectPdfPage() {
   const [allowPrinting, setAllowPrinting] = useState(true);
   const [allowModifying, setAllowModifying] = useState(false);
   const [allowCopying, setAllowCopying] = useState(false);
+  const [allowAnnotating, setAllowAnnotating] = useState(false);
+  const [allowFillingForms, setAllowFillingForms] = useState(true);
+  const [allowExtraction, setAllowExtraction] = useState(false);
+  const [allowAssembly, setAllowAssembly] = useState(false);
   const [leftView, setLeftView] = useState<'list' | 'grid'>('list');
   const [rightView, setRightView] = useState<'list' | 'grid'>('list');
   const [leftGridIdx, setLeftGridIdx] = useState(0);
@@ -173,7 +177,7 @@ export default function ProtectPdfPage() {
         const fp = fps[i];
         setProgress({ current: i + 1, total: fps.length, currentFile: fp.file.name });
         const blob = await protectPdf(fp.file, fp.password, undefined, {
-          allowPrinting, allowModifying, allowCopying, allowFillingForms: true,
+          allowPrinting, allowModifying, allowCopying, allowAnnotating, allowFillingForms, allowExtraction, allowAssembly,
         });
         newResults.push({ sourceFile: fp.file, result: blob });
         setResults([...newResults]);
@@ -185,7 +189,7 @@ export default function ProtectPdfPage() {
     } finally {
       setProcessing(false);
     }
-  }, [files, getFilePassword, allowPrinting, allowModifying, allowCopying]);
+  }, [files, getFilePassword, allowPrinting, allowModifying, allowCopying, allowAnnotating, allowFillingForms, allowExtraction, allowAssembly]);
 
   const handleDownloadResult = useCallback((r: ProcessedResult) => {
     downloadBlob(r.result, r.sourceFile.name.replace(/\.pdf$/i, '_protected.pdf'));
@@ -325,6 +329,22 @@ export default function ProtectPdfPage() {
                       <label className="flex items-center gap-3 cursor-pointer group">
                         <input type="checkbox" checked={allowCopying} onChange={(e) => setAllowCopying(e.target.checked)} className="w-4 h-4 rounded border-border text-primary focus:ring-primary/20" />
                         <span className="text-sm text-foreground group-hover:text-primary transition-colors">Allow copying text</span>
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                        <input type="checkbox" checked={allowAnnotating} onChange={(e) => setAllowAnnotating(e.target.checked)} className="w-4 h-4 rounded border-border text-primary focus:ring-primary/20" />
+                        <span className="text-sm text-foreground group-hover:text-primary transition-colors">Allow annotating</span>
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                        <input type="checkbox" checked={allowFillingForms} onChange={(e) => setAllowFillingForms(e.target.checked)} className="w-4 h-4 rounded border-border text-primary focus:ring-primary/20" />
+                        <span className="text-sm text-foreground group-hover:text-primary transition-colors">Allow filling forms</span>
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                        <input type="checkbox" checked={allowExtraction} onChange={(e) => setAllowExtraction(e.target.checked)} className="w-4 h-4 rounded border-border text-primary focus:ring-primary/20" />
+                        <span className="text-sm text-foreground group-hover:text-primary transition-colors">Allow extracting</span>
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                        <input type="checkbox" checked={allowAssembly} onChange={(e) => setAllowAssembly(e.target.checked)} className="w-4 h-4 rounded border-border text-primary focus:ring-primary/20" />
+                        <span className="text-sm text-foreground group-hover:text-primary transition-colors">Allow page assembly</span>
                       </label>
                     </div>
                   </div>
