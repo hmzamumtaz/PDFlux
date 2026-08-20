@@ -581,19 +581,6 @@ export async function createPdfFromText(text: string, title?: string): Promise<B
 }
 
 async function translateChunk(text: string, from: string, to: string): Promise<string> {
-  // Try Puter.js first if available (higher quality)
-  const puter = typeof window !== 'undefined' ? (window as any).puter : null;
-  if (puter?.ai?.chat) {
-    try {
-      const toName = Object.entries(LANG_CODES).find(([, c]) => c === to)?.[0] || to;
-      const prompt = `Translate the following text to ${toName}. Output only the translated text, no explanations, comments, or additional notes:\n\n${text}`;
-      const result = await puter.ai.chat(prompt, { model: 'gpt-4o-mini' });
-      const translated = typeof result === 'string' ? result : result?.message?.content || result?.text || String(result);
-      if (translated && translated.trim().length > 0) return translated.trim();
-    } catch { /* fall through to MyMemory */ }
-  }
-
-  // MyMemory fallback (no auth required)
   const langpair = `${from}|${to}`;
   const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langpair}`;
   const res = await fetch(url);
