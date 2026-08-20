@@ -332,6 +332,55 @@ export async function pdfToMarkdown(file: File): Promise<string> {
   return pages.map((text, i) => `## Page ${i + 1}\n\n${text}\n\n---\n\n`).join('');
 }
 
+const LANG_CODES: Record<string, string> = {
+  'Spanish': 'es', 'French': 'fr', 'German': 'de', 'Italian': 'it',
+  'Portuguese': 'pt', 'Russian': 'ru', 'Chinese': 'zh-CN', 'Japanese': 'ja',
+  'Korean': 'ko', 'Arabic': 'ar', 'Hindi': 'hi', 'Dutch': 'nl',
+  'Swedish': 'sv', 'Polish': 'pl', 'Turkish': 'tr', 'Vietnamese': 'vi',
+  'Thai': 'th', 'Indonesian': 'id', 'English': 'en',
+};
+
+async function translateChunk(text: string, from: string, to: string): Promise<string> {
+  const langpair = `${from}|${to}`;
+  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langpair}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Translation API error: ${res.status}`);
+  const data = await res.json();
+  if (data.responseStatus === 200 || data.responseStatus === '200') {
+    return data.responseData.translatedText;
+  }
+  throw new Error(data.responseDetails || 'Translation failed');
+}
+
+export async function translateText(text: string, fromLang: string, toLang: string, onProgress?: (current: number, total: number) => void): Promise<string> {
+  const from = LANG_CODES[fromLang] || fromLang;
+  const to = LANG_CODES[toLang] || toLang;
+  const chunkSize = 450;
+  const sentences = text.replace(/\n+/g, ' ').split(/(?<=[.!?])\s+/);
+  const chunks: string[] = [];
+  let current = '';
+
+  for (const sentence of sentences) {
+    if ((current + ' ' + sentence).length > chunkSize && current) {
+      chunks.push(current.trim());
+      current = sentence;
+    } else {
+      current = current ? current + ' ' + sentence : sentence;
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+
+  const results: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    onProgress?.(i + 1, chunks.length);
+    const translated = await translateChunk(chunks[i], from, to);
+    results.push(translated);
+    if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 250));
+  }
+
+  return results.join(' ');
+}
+
 export async function renderPdfPages(file: File, pageNumbers: number[]): Promise<{ page: number; url: string; width: number; height: number }[]> {
   const pdfjsLib = await import('pdfjs-dist');
   pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs`;
