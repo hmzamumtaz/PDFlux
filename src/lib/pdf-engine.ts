@@ -514,12 +514,71 @@ export async function pdfToMarkdown(file: File): Promise<string> {
 }
 
 const LANG_CODES: Record<string, string> = {
-  'Spanish': 'es', 'French': 'fr', 'German': 'de', 'Italian': 'it',
-  'Portuguese': 'pt', 'Russian': 'ru', 'Chinese': 'zh-CN', 'Japanese': 'ja',
-  'Korean': 'ko', 'Arabic': 'ar', 'Hindi': 'hi', 'Dutch': 'nl',
+  'English': 'en', 'Spanish': 'es', 'French': 'fr', 'German': 'de', 'Italian': 'it',
+  'Portuguese': 'pt', 'Russian': 'ru', 'Chinese (Simplified)': 'zh-CN', 'Chinese (Traditional)': 'zh-TW',
+  'Japanese': 'ja', 'Korean': 'ko', 'Arabic': 'ar', 'Hindi': 'hi', 'Dutch': 'nl',
   'Swedish': 'sv', 'Polish': 'pl', 'Turkish': 'tr', 'Vietnamese': 'vi',
-  'Thai': 'th', 'Indonesian': 'id', 'English': 'en',
+  'Thai': 'th', 'Indonesian': 'id', 'Bengali': 'bn', 'Bulgarian': 'bg',
+  'Czech': 'cs', 'Danish': 'da', 'Finnish': 'fi', 'Greek': 'el',
+  'Hebrew': 'he', 'Hungarian': 'hu', 'Icelandic': 'is', 'Latvian': 'lv',
+  'Lithuanian': 'lt', 'Norwegian': 'no', 'Persian': 'fa', 'Romanian': 'ro',
+  'Serbian': 'sr', 'Slovak': 'sk', 'Slovenian': 'sl', 'Croatian': 'hr',
+  'Ukrainian': 'uk', 'Tagalog': 'tl', 'Tamil': 'ta', 'Urdu': 'ur',
 };
+
+const FONT_FALLBACK: Record<string, string> = {
+  'zh-CN': 'Helvetica', 'zh-TW': 'Helvetica', 'ja': 'Helvetica', 'ko': 'Helvetica',
+  'ar': 'Helvetica', 'he': 'Helvetica', 'hi': 'Helvetica', 'bn': 'Helvetica',
+  'ta': 'Helvetica', 'ur': 'Helvetica', 'th': 'Helvetica',
+};
+
+export async function createPdfFromText(text: string, title?: string): Promise<Blob> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await doc.embedFont(StandardFonts.HelveticaBold);
+
+  const pageWidth = 595.28;
+  const pageHeight = 841.89;
+  const margin = 50;
+  const lineHeight = 14;
+  const maxLineWidth = pageWidth - margin * 2;
+
+  const paragraphs = text.split(/\n+/).filter(p => p.trim());
+  let page = doc.addPage([pageWidth, pageHeight]);
+  let y = pageHeight - margin;
+
+  for (const para of paragraphs) {
+    const words = para.split(/\s+/);
+    let line = '';
+
+    for (const word of words) {
+      const testLine = line ? `${line} ${word}` : word;
+      const width = font.widthOfTextAtSize(testLine, 10);
+      if (width > maxLineWidth && line) {
+        if (y - lineHeight < margin) {
+          page = doc.addPage([pageWidth, pageHeight]);
+          y = pageHeight - margin;
+        }
+        page.drawText(line, { x: margin, y, size: 10, font, color: rgb(0.12, 0.12, 0.12) });
+        y -= lineHeight;
+        line = word;
+      } else {
+        line = testLine;
+      }
+    }
+    if (line) {
+      if (y - lineHeight < margin) {
+        page = doc.addPage([pageWidth, pageHeight]);
+        y = pageHeight - margin;
+      }
+      page.drawText(line, { x: margin, y, size: 10, font, color: rgb(0.12, 0.12, 0.12) });
+      y -= lineHeight;
+    }
+    y -= lineHeight * 0.5;
+  }
+
+  return toBlob(await doc.save());
+}
 
 async function translateChunk(text: string, from: string, to: string): Promise<string> {
   const langpair = `${from}|${to}`;
