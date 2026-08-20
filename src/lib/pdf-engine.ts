@@ -723,6 +723,136 @@ export interface OcrResult {
   totalChars: number;
 }
 
+export interface LangVerification {
+  matches: boolean;
+  selectedConfidence: { code: string; confidence: number }[];
+  detectedSample: string;
+  message: string;
+}
+
+export async function verifyOcrLanguages(file: File, selectedLangs: string[], onProgress?: (msg: string) => void): Promise<LangVerification> {
+  const Tesseract = await import('tesseract.js');
+  const pdfjsLib = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs`;
+
+  onProgress?.('Loading PDF...');
+  const buf = await readFileAsArrayBuffer(file);
+  const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+  const page = await pdfDoc.getPage(1);
+  const viewport = page.getViewport({ scale: 3 });
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext('2d')!;
+  await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+
+  const selectedConfidence: { code: string; confidence: number }[] = [];
+
+  for (const lang of selectedLangs) {
+    onProgress?.(`Verifying ${lang}...`);
+    try {
+      const { data } = await Tesseract.recognize(canvas, lang);
+      selectedConfidence.push({ code: lang, confidence: Math.round(data.confidence) });
+    } catch {
+      selectedConfidence.push({ code: lang, confidence: 0 });
+    }
+  }
+
+  // Scan with a broad multi-language model to detect unexpected languages
+  const commonLangs = ['eng', 'fra', 'deu', 'spa', 'ita', 'por', 'rus', 'ara', 'hin', 'chi_sim', 'jpn', 'kor'];
+  const probeLangs = commonLangs.filter(l => !selectedLangs.includes(l));
+  const probeString = probeLangs.join('+');
+
+  let detectedExtras: { code: string; confidence: number }[] = [];
+  if (probeLangs.length > 0) {
+    onProgress?.('Detecting additional languages...');
+    try {
+      const { data } = await Tesseract.recognize(canvas, probeString);
+      const words = (data as any).words || [];
+      const scriptLangMap: Record<string, string> = {
+        arabic: 'ara', cyrillic: 'rus', devanagari: 'hin', cjk: 'chi_sim',
+        hangul: 'kor', hiragana: 'jpn', katakana: 'jpn', greek: 'ell', hebrew: 'heb', thai: 'tha',
+      };
+      const scripts = (data as any).script || '';
+      const lines = (data as any).lines || [];
+
+      // Check confidence for each probe language individually (sample only 2)
+      const sampleLangs = probeLangs.slice(0, 2);
+      for (const lang of sampleLangs) {
+        try {
+          const r = await Tesseract.recognize(canvas, lang);
+          if (r.data.confidence > 50 && r.data.text.trim().length > 5) {
+            detectedExtras.push({ code: lang, confidence: Math.round(r.data.confidence) });
+          }
+        } catch { /* skip */ }
+      }
+    } catch { /* skip probe */ }
+  }
+
+  const avgSelected = selectedConfidence.reduce((s, c) => s + c.confidence, 0) / selectedConfidence.length;
+  const highExtras = detectedExtras.filter(e => e.confidence > 60);
+
+  if (avgSelected >= 50 && highExtras.length === 0) {
+    const lowest = Math.min(...selectedConfidence.map(c => c.confidence));
+    return {
+      matches: true,
+      selectedConfidence,
+      detectedSample: '',
+      message: lowest >= 70
+        ? `Languages verified with high confidence (avg ${Math.round(avgSelected)}%). Ready for OCR.`
+        : `Languages verified (avg ${Math.round(avgSelected)}%). Results may vary for some pages.`,
+    };
+  }
+
+  if (avgSelected < 30) {
+    return {
+      matches: false,
+      selectedConfidence,
+      detectedSample: highExtras.map(e => e.code).join(', '),
+      message: `Selected languages scored very low (avg ${Math.round(avgSelected)}%). The document likely uses different languages. Please reselect.`,
+    };
+  }
+
+  if (highExtras.length > 0) {
+    const extraNames = highExtras.map(e => {
+      const l = LANGUAGES.find(l => l.code === e.code);
+      return `${l?.name || e.code} (${e.confidence}%)`;
+    });
+    return {
+      matches: false,
+      selectedConfidence,
+      detectedSample: highExtras.map(e => e.code).join(', '),
+      message: `Detected additional languages not in your selection: ${extraNames.join(', ')}. Add them for better accuracy.`,
+    };
+  }
+
+  return {
+    matches: true,
+    selectedConfidence,
+    detectedSample: '',
+    message: `Languages verified (avg ${Math.round(avgSelected)}%). You may proceed with OCR.`,
+  };
+}
+
+const LANGUAGES = [
+  { code: 'eng', name: 'English' }, { code: 'ara', name: 'Arabic' }, { code: 'ben', name: 'Bengali' },
+  { code: 'bul', name: 'Bulgarian' }, { code: 'cat', name: 'Catalan' }, { code: 'ces', name: 'Czech' },
+  { code: 'chi_sim', name: 'Chinese (Simplified)' }, { code: 'chi_tra', name: 'Chinese (Traditional)' },
+  { code: 'hrv', name: 'Croatian' }, { code: 'dan', name: 'Danish' }, { code: 'nld', name: 'Dutch' },
+  { code: 'fin', name: 'Finnish' }, { code: 'fra', name: 'French' }, { code: 'deu', name: 'German' },
+  { code: 'ell', name: 'Greek' }, { code: 'heb', name: 'Hebrew' }, { code: 'hin', name: 'Hindi' },
+  { code: 'hun', name: 'Hungarian' }, { code: 'isl', name: 'Icelandic' }, { code: 'ind', name: 'Indonesian' },
+  { code: 'ita', name: 'Italian' }, { code: 'jpn', name: 'Japanese' }, { code: 'kor', name: 'Korean' },
+  { code: 'lav', name: 'Latvian' }, { code: 'lit', name: 'Lithuanian' }, { code: 'mlt', name: 'Maltese' },
+  { code: 'nor', name: 'Norwegian' }, { code: 'fas', name: 'Persian' }, { code: 'pol', name: 'Polish' },
+  { code: 'por', name: 'Portuguese' }, { code: 'ron', name: 'Romanian' }, { code: 'rus', name: 'Russian' },
+  { code: 'srp', name: 'Serbian' }, { code: 'slk', name: 'Slovak' }, { code: 'slv', name: 'Slovenian' },
+  { code: 'spa', name: 'Spanish' }, { code: 'swe', name: 'Swedish' }, { code: 'tgl', name: 'Tagalog' },
+  { code: 'tam', name: 'Tamil' }, { code: 'tha', name: 'Thai' }, { code: 'tur', name: 'Turkish' },
+  { code: 'ukr', name: 'Ukrainian' }, { code: 'urd', name: 'Urdu' }, { code: 'vie', name: 'Vietnamese' },
+  { code: 'osd', name: 'Orientation & Script Detection' },
+];
+
 export async function ocrPdf(file: File, languages: string[], onProgress?: (page: number, total: number, msg: string) => void): Promise<OcrResult> {
   const Tesseract = await import('tesseract.js');
   const pdfjsLib = await import('pdfjs-dist');

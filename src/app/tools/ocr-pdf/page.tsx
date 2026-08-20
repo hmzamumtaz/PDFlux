@@ -1,57 +1,27 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { ArrowLeft, Loader2, FileDown, AlertCircle, CheckCircle2, ScanText, X } from 'lucide-react';
+import { ArrowLeft, Loader2, FileDown, AlertCircle, CheckCircle2, ScanText, X, ShieldCheck, ShieldAlert } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
-import { ocrPdf, OcrResult, downloadBlob } from '@/lib/pdf-engine';
+import { ocrPdf, verifyOcrLanguages, OcrResult, LangVerification, downloadBlob } from '@/lib/pdf-engine';
 
 const LANGUAGES = [
-  { code: 'eng', name: 'English' },
-  { code: 'ara', name: 'Arabic' },
-  { code: 'ben', name: 'Bengali' },
-  { code: 'bul', name: 'Bulgarian' },
-  { code: 'cat', name: 'Catalan' },
-  { code: 'ces', name: 'Czech' },
-  { code: 'chi_sim', name: 'Chinese (Simplified)' },
-  { code: 'chi_tra', name: 'Chinese (Traditional)' },
-  { code: 'hrv', name: 'Croatian' },
-  { code: 'dan', name: 'Danish' },
-  { code: 'nld', name: 'Dutch' },
-  { code: 'fin', name: 'Finnish' },
-  { code: 'fra', name: 'French' },
-  { code: 'deu', name: 'German' },
-  { code: 'ell', name: 'Greek' },
-  { code: 'heb', name: 'Hebrew' },
-  { code: 'hin', name: 'Hindi' },
-  { code: 'hun', name: 'Hungarian' },
-  { code: 'isl', name: 'Icelandic' },
-  { code: 'ind', name: 'Indonesian' },
-  { code: 'ita', name: 'Italian' },
-  { code: 'jpn', name: 'Japanese' },
-  { code: 'kor', name: 'Korean' },
-  { code: 'lav', name: 'Latvian' },
-  { code: 'lit', name: 'Lithuanian' },
-  { code: 'mlt', name: 'Maltese' },
-  { code: 'nor', name: 'Norwegian' },
-  { code: 'fas', name: 'Persian' },
-  { code: 'pol', name: 'Polish' },
-  { code: 'por', name: 'Portuguese' },
-  { code: 'ron', name: 'Romanian' },
-  { code: 'rus', name: 'Russian' },
-  { code: 'srp', name: 'Serbian' },
-  { code: 'slk', name: 'Slovak' },
-  { code: 'slv', name: 'Slovenian' },
-  { code: 'spa', name: 'Spanish' },
-  { code: 'swe', name: 'Swedish' },
-  { code: 'tgl', name: 'Tagalog' },
-  { code: 'tam', name: 'Tamil' },
-  { code: 'tha', name: 'Thai' },
-  { code: 'tur', name: 'Turkish' },
-  { code: 'ukr', name: 'Ukrainian' },
-  { code: 'urd', name: 'Urdu' },
-  { code: 'vie', name: 'Vietnamese' },
-  { code: 'osd', name: 'Orientation & Script Detection' },
+  { code: 'eng', name: 'English' }, { code: 'ara', name: 'Arabic' }, { code: 'ben', name: 'Bengali' },
+  { code: 'bul', name: 'Bulgarian' }, { code: 'cat', name: 'Catalan' }, { code: 'ces', name: 'Czech' },
+  { code: 'chi_sim', name: 'Chinese (Simplified)' }, { code: 'chi_tra', name: 'Chinese (Traditional)' },
+  { code: 'hrv', name: 'Croatian' }, { code: 'dan', name: 'Danish' }, { code: 'nld', name: 'Dutch' },
+  { code: 'fin', name: 'Finnish' }, { code: 'fra', name: 'French' }, { code: 'deu', name: 'German' },
+  { code: 'ell', name: 'Greek' }, { code: 'heb', name: 'Hebrew' }, { code: 'hin', name: 'Hindi' },
+  { code: 'hun', name: 'Hungarian' }, { code: 'isl', name: 'Icelandic' }, { code: 'ind', name: 'Indonesian' },
+  { code: 'ita', name: 'Italian' }, { code: 'jpn', name: 'Japanese' }, { code: 'kor', name: 'Korean' },
+  { code: 'lav', name: 'Latvian' }, { code: 'lit', name: 'Lithuanian' }, { code: 'mlt', name: 'Maltese' },
+  { code: 'nor', name: 'Norwegian' }, { code: 'fas', name: 'Persian' }, { code: 'pol', name: 'Polish' },
+  { code: 'por', name: 'Portuguese' }, { code: 'ron', name: 'Romanian' }, { code: 'rus', name: 'Russian' },
+  { code: 'srp', name: 'Serbian' }, { code: 'slk', name: 'Slovak' }, { code: 'slv', name: 'Slovenian' },
+  { code: 'spa', name: 'Spanish' }, { code: 'swe', name: 'Swedish' }, { code: 'tgl', name: 'Tagalog' },
+  { code: 'tam', name: 'Tamil' }, { code: 'tha', name: 'Thai' }, { code: 'tur', name: 'Turkish' },
+  { code: 'ukr', name: 'Ukrainian' }, { code: 'urd', name: 'Urdu' }, { code: 'vie', name: 'Vietnamese' },
 ];
 
 function formatBytes(bytes: number): string {
@@ -64,6 +34,9 @@ export default function OcrPdfPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [selectedLangs, setSelectedLangs] = useState<string[]>(['eng']);
   const [langSearch, setLangSearch] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [verifyProgress, setVerifyProgress] = useState('');
+  const [verification, setVerification] = useState<LangVerification | null>(null);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState('');
   const [result, setResult] = useState<OcrResult | null>(null);
@@ -76,10 +49,12 @@ export default function OcrPdfPage() {
       return [...prev, code];
     });
     setLangSearch('');
+    setVerification(null);
   };
 
   const removeLang = (code: string) => {
     setSelectedLangs(prev => prev.filter(c => c !== code));
+    setVerification(null);
   };
 
   const filteredLangs = LANGUAGES.filter(l =>
@@ -87,12 +62,29 @@ export default function OcrPdfPage() {
     l.code.toLowerCase().includes(langSearch.toLowerCase())
   );
 
+  const handleVerify = useCallback(async () => {
+    if (files.length === 0 || selectedLangs.length === 0) return;
+    setVerifying(true);
+    setError(null);
+    setVerification(null);
+    setVerifyProgress('Loading document...');
+    try {
+      const res = await verifyOcrLanguages(files[0], selectedLangs, (msg) => setVerifyProgress(msg));
+      setVerification(res);
+    } catch (err: any) {
+      setError(err.message || 'Verification failed');
+    } finally {
+      setVerifying(false);
+      setVerifyProgress('');
+    }
+  }, [files, selectedLangs]);
+
   const handleProcess = useCallback(async () => {
     if (files.length === 0 || selectedLangs.length === 0) return;
     setProcessing(true);
     setError(null);
     setResult(null);
-    setProgress('Preparing OCR engine...');
+    setProgress('Starting OCR...');
     try {
       const res = await ocrPdf(files[0], selectedLangs, (page, total, msg) => setProgress(msg));
       setResult(res);
@@ -131,8 +123,8 @@ export default function OcrPdfPage() {
             accept=".pdf"
             multiple={false}
             files={files}
-            onFilesSelected={(f) => { setFiles(f); setResult(null); setError(null); setProgress(''); }}
-            onRemoveFile={() => { setFiles([]); setResult(null); setProgress(''); }}
+            onFilesSelected={(f) => { setFiles(f); setResult(null); setError(null); setVerification(null); setProgress(''); }}
+            onRemoveFile={() => { setFiles([]); setResult(null); setVerification(null); setProgress(''); }}
           />
 
           {files.length > 0 && !result && (
@@ -151,9 +143,8 @@ export default function OcrPdfPage() {
               {/* Language selection */}
               <div>
                 <label className="block text-sm font-semibold text-foreground mb-2">Document language</label>
-                <p className="text-xs text-muted-foreground mb-3">Select up to 3 languages for best accuracy. More languages = longer processing.</p>
+                <p className="text-xs text-muted-foreground mb-3">Select up to 3 languages for best accuracy. You must verify before OCR.</p>
 
-                {/* Selected languages */}
                 {selectedLangs.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-3">
                     {selectedLangs.map(code => {
@@ -170,16 +161,10 @@ export default function OcrPdfPage() {
                   </div>
                 )}
 
-                {/* Search + dropdown */}
                 {selectedLangs.length < 3 && (
                   <div className="relative">
-                    <input
-                      type="text"
-                      value={langSearch}
-                      onChange={(e) => setLangSearch(e.target.value)}
-                      placeholder="Search languages..."
-                      className="w-full px-4 py-3 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                    />
+                    <input type="text" value={langSearch} onChange={(e) => setLangSearch(e.target.value)}
+                      placeholder="Search languages..." className="w-full px-4 py-3 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
                     {langSearch && (
                       <div className="absolute z-10 w-full mt-1 bg-white border border-border rounded-xl shadow-lg max-h-60 overflow-y-auto">
                         {filteredLangs.length === 0 ? (
@@ -202,23 +187,77 @@ export default function OcrPdfPage() {
                     )}
                   </div>
                 )}
-
-                <p className="text-xs text-muted-foreground mt-2">
-                  {selectedLangs.length}/3 selected
-                  {selectedLangs.length >= 3 && ' (max reached)'}
-                </p>
+                <p className="text-xs text-muted-foreground mt-2">{selectedLangs.length}/3 selected{selectedLangs.length >= 3 && ' (max reached)'}</p>
               </div>
 
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                <p className="text-sm text-blue-800 leading-relaxed">
-                  <span className="font-semibold">What this does:</span> Scans each page using OCR, extracts all visible text, and creates a new PDF with an invisible text layer. The result is a fully selectable and searchable PDF while keeping the original visual appearance intact.
-                </p>
-              </div>
+              {/* Verify button */}
+              {!verification && (
+                <button onClick={handleVerify} disabled={verifying || selectedLangs.length === 0}
+                  className="px-6 py-3 rounded-xl font-semibold text-sm transition-all flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white hover:shadow-lg hover:shadow-blue-500/25 active:scale-[0.98] disabled:opacity-50">
+                  {verifying ? <><Loader2 className="w-4 h-4 animate-spin" /> {verifyProgress || 'Verifying...'}</> : <><ShieldCheck className="w-4 h-4" /> Verify Languages</>}
+                </button>
+              )}
 
               {error && (
                 <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
                   <AlertCircle className="w-5 h-5 text-destructive shrink-0" />
                   <p className="text-sm text-destructive">{error}</p>
+                </div>
+              )}
+
+              {/* Verification result */}
+              {verification && (
+                <div className={`p-5 rounded-xl border animate-fade-in ${verification.matches ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+                  <div className="flex items-start gap-3 mb-3">
+                    {verification.matches ? (
+                      <ShieldCheck className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <p className={`text-sm font-semibold ${verification.matches ? 'text-green-800' : 'text-amber-800'}`}>
+                        {verification.matches ? 'Languages verified' : 'Language mismatch detected'}
+                      </p>
+                      <p className={`text-sm ${verification.matches ? 'text-green-700' : 'text-amber-700'}`}>
+                        {verification.message}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Confidence breakdown */}
+                  <div className="mt-3 space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">Confidence scores:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {verification.selectedConfidence.map(c => {
+                        const lang = LANGUAGES.find(l => l.code === c.code);
+                        const color = c.confidence >= 70 ? 'text-green-700 bg-green-100' : c.confidence >= 40 ? 'text-amber-700 bg-amber-100' : 'text-red-700 bg-red-100';
+                        return (
+                          <span key={c.code} className={`px-2.5 py-1 rounded-lg text-xs font-medium ${color}`}>
+                            {lang?.name || c.code}: {c.confidence}%
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {verification.detectedSample && (
+                    <p className="text-xs text-amber-700 mt-2">Detected additional: {verification.detectedSample}</p>
+                  )}
+
+                  <div className="mt-3 flex gap-2">
+                    {!verification.matches && (
+                      <button onClick={() => setVerification(null)}
+                        className="px-4 py-2 rounded-lg text-xs font-medium border border-border hover:bg-white/50 transition-colors">
+                        Reselect languages
+                      </button>
+                    )}
+                    {verification.matches && (
+                      <button onClick={handleProcess} disabled={processing}
+                        className="px-6 py-3 rounded-xl font-semibold text-sm transition-all flex items-center gap-2 bg-lime-500 hover:bg-lime-600 text-white hover:shadow-lg hover:shadow-lime-500/25 active:scale-[0.98] disabled:opacity-50">
+                        {processing ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing OCR...</> : <><ScanText className="w-4 h-4" /> Start OCR</>}
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -228,11 +267,6 @@ export default function OcrPdfPage() {
                   <p className="text-sm font-medium text-lime-800">{progress}</p>
                 </div>
               )}
-
-              <button onClick={handleProcess} disabled={processing || selectedLangs.length === 0}
-                className="px-8 py-3.5 rounded-xl font-semibold text-sm transition-all flex items-center gap-2 bg-lime-500 hover:bg-lime-600 text-white hover:shadow-lg hover:shadow-lime-500/25 active:scale-[0.98] disabled:opacity-50">
-                {processing ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing OCR...</> : <><ScanText className="w-4 h-4" /> Start OCR</>}
-              </button>
             </div>
           )}
 
@@ -259,7 +293,7 @@ export default function OcrPdfPage() {
                 <button onClick={handleDownload} className="px-6 py-3 rounded-xl font-semibold text-sm bg-primary hover:bg-primary-hover text-white transition-all flex items-center gap-2">
                   <FileDown className="w-4 h-4" /> Download OCR PDF
                 </button>
-                <button onClick={() => { setResult(null); }} className="px-6 py-3 rounded-xl text-sm font-medium border border-border hover:bg-gray-50 transition-colors">
+                <button onClick={() => { setResult(null); setVerification(null); }} className="px-6 py-3 rounded-xl text-sm font-medium border border-border hover:bg-gray-50 transition-colors">
                   Process Another
                 </button>
               </div>
