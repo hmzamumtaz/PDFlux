@@ -80,7 +80,7 @@ export default function OcrPdfPage() {
       }).catch(() => {
         if (id === abortRef.current) setScanning(false);
       });
-    }, 300);
+    }, 1500);
 
     return () => { clearTimeout(timer); abortRef.current = id; };
   }, [files, selectedLangs]);
