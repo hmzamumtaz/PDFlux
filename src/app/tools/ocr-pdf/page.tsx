@@ -1,10 +1,58 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { ArrowLeft, Loader2, FileDown, AlertCircle, CheckCircle2, ScanText } from 'lucide-react';
+import { ArrowLeft, Loader2, FileDown, AlertCircle, CheckCircle2, ScanText, X } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
 import { ocrPdf, OcrResult, downloadBlob } from '@/lib/pdf-engine';
+
+const LANGUAGES = [
+  { code: 'eng', name: 'English' },
+  { code: 'ara', name: 'Arabic' },
+  { code: 'ben', name: 'Bengali' },
+  { code: 'bul', name: 'Bulgarian' },
+  { code: 'cat', name: 'Catalan' },
+  { code: 'ces', name: 'Czech' },
+  { code: 'chi_sim', name: 'Chinese (Simplified)' },
+  { code: 'chi_tra', name: 'Chinese (Traditional)' },
+  { code: 'hrv', name: 'Croatian' },
+  { code: 'dan', name: 'Danish' },
+  { code: 'nld', name: 'Dutch' },
+  { code: 'fin', name: 'Finnish' },
+  { code: 'fra', name: 'French' },
+  { code: 'deu', name: 'German' },
+  { code: 'ell', name: 'Greek' },
+  { code: 'heb', name: 'Hebrew' },
+  { code: 'hin', name: 'Hindi' },
+  { code: 'hun', name: 'Hungarian' },
+  { code: 'isl', name: 'Icelandic' },
+  { code: 'ind', name: 'Indonesian' },
+  { code: 'ita', name: 'Italian' },
+  { code: 'jpn', name: 'Japanese' },
+  { code: 'kor', name: 'Korean' },
+  { code: 'lav', name: 'Latvian' },
+  { code: 'lit', name: 'Lithuanian' },
+  { code: 'mlt', name: 'Maltese' },
+  { code: 'nor', name: 'Norwegian' },
+  { code: 'fas', name: 'Persian' },
+  { code: 'pol', name: 'Polish' },
+  { code: 'por', name: 'Portuguese' },
+  { code: 'ron', name: 'Romanian' },
+  { code: 'rus', name: 'Russian' },
+  { code: 'srp', name: 'Serbian' },
+  { code: 'slk', name: 'Slovak' },
+  { code: 'slv', name: 'Slovenian' },
+  { code: 'spa', name: 'Spanish' },
+  { code: 'swe', name: 'Swedish' },
+  { code: 'tgl', name: 'Tagalog' },
+  { code: 'tam', name: 'Tamil' },
+  { code: 'tha', name: 'Thai' },
+  { code: 'tur', name: 'Turkish' },
+  { code: 'ukr', name: 'Ukrainian' },
+  { code: 'urd', name: 'Urdu' },
+  { code: 'vie', name: 'Vietnamese' },
+  { code: 'osd', name: 'Orientation & Script Detection' },
+];
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -14,19 +62,39 @@ function formatBytes(bytes: number): string {
 
 export default function OcrPdfPage() {
   const [files, setFiles] = useState<File[]>([]);
+  const [selectedLangs, setSelectedLangs] = useState<string[]>(['eng']);
+  const [langSearch, setLangSearch] = useState('');
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState('');
   const [result, setResult] = useState<OcrResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const toggleLang = (code: string) => {
+    setSelectedLangs(prev => {
+      if (prev.includes(code)) return prev.filter(c => c !== code);
+      if (prev.length >= 3) return prev;
+      return [...prev, code];
+    });
+    setLangSearch('');
+  };
+
+  const removeLang = (code: string) => {
+    setSelectedLangs(prev => prev.filter(c => c !== code));
+  };
+
+  const filteredLangs = LANGUAGES.filter(l =>
+    l.name.toLowerCase().includes(langSearch.toLowerCase()) ||
+    l.code.toLowerCase().includes(langSearch.toLowerCase())
+  );
+
   const handleProcess = useCallback(async () => {
-    if (files.length === 0) return;
+    if (files.length === 0 || selectedLangs.length === 0) return;
     setProcessing(true);
     setError(null);
     setResult(null);
-    setProgress('Starting OCR...');
+    setProgress('Preparing OCR engine...');
     try {
-      const res = await ocrPdf(files[0], (page, total, msg) => setProgress(msg));
+      const res = await ocrPdf(files[0], selectedLangs, (page, total, msg) => setProgress(msg));
       setResult(res);
     } catch (err: any) {
       setError(err.message || 'OCR processing failed');
@@ -34,7 +102,7 @@ export default function OcrPdfPage() {
     } finally {
       setProcessing(false);
     }
-  }, [files]);
+  }, [files, selectedLangs]);
 
   const handleDownload = useCallback(() => {
     if (!result) return;
@@ -68,7 +136,7 @@ export default function OcrPdfPage() {
           />
 
           {files.length > 0 && !result && (
-            <div className="mt-6 space-y-4">
+            <div className="mt-6 space-y-5">
               <div className="p-4 bg-gray-50 rounded-xl border border-border space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">File</span>
@@ -78,6 +146,67 @@ export default function OcrPdfPage() {
                   <span className="text-sm text-muted-foreground">Size</span>
                   <span className="text-sm font-medium text-foreground">{formatBytes(files[0].size)}</span>
                 </div>
+              </div>
+
+              {/* Language selection */}
+              <div>
+                <label className="block text-sm font-semibold text-foreground mb-2">Document language</label>
+                <p className="text-xs text-muted-foreground mb-3">Select up to 3 languages for best accuracy. More languages = longer processing.</p>
+
+                {/* Selected languages */}
+                {selectedLangs.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {selectedLangs.map(code => {
+                      const lang = LANGUAGES.find(l => l.code === code);
+                      return (
+                        <span key={code} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-xs font-medium">
+                          {lang?.name || code}
+                          <button onClick={() => removeLang(code)} className="hover:bg-primary/20 rounded-full p-0.5 transition-colors">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Search + dropdown */}
+                {selectedLangs.length < 3 && (
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={langSearch}
+                      onChange={(e) => setLangSearch(e.target.value)}
+                      placeholder="Search languages..."
+                      className="w-full px-4 py-3 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    />
+                    {langSearch && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-border rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                        {filteredLangs.length === 0 ? (
+                          <div className="px-4 py-3 text-sm text-muted-foreground">No languages found</div>
+                        ) : (
+                          filteredLangs.map(lang => {
+                            const isSelected = selectedLangs.includes(lang.code);
+                            const isDisabled = selectedLangs.length >= 3 && !isSelected;
+                            return (
+                              <button key={lang.code} onClick={() => !isDisabled && !isSelected && toggleLang(lang.code)}
+                                disabled={isDisabled}
+                                className={`w-full px-4 py-2.5 text-left text-sm flex items-center justify-between transition-colors ${isDisabled ? 'opacity-40 cursor-not-allowed' : isSelected ? 'bg-primary/5 text-primary' : 'hover:bg-gray-50'}`}>
+                                <span>{lang.name}</span>
+                                <span className="text-xs text-muted-foreground font-mono">{lang.code}</span>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <p className="text-xs text-muted-foreground mt-2">
+                  {selectedLangs.length}/3 selected
+                  {selectedLangs.length >= 3 && ' (max reached)'}
+                </p>
               </div>
 
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
@@ -100,7 +229,7 @@ export default function OcrPdfPage() {
                 </div>
               )}
 
-              <button onClick={handleProcess} disabled={processing}
+              <button onClick={handleProcess} disabled={processing || selectedLangs.length === 0}
                 className="px-8 py-3.5 rounded-xl font-semibold text-sm transition-all flex items-center gap-2 bg-lime-500 hover:bg-lime-600 text-white hover:shadow-lg hover:shadow-lime-500/25 active:scale-[0.98] disabled:opacity-50">
                 {processing ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing OCR...</> : <><ScanText className="w-4 h-4" /> Start OCR</>}
               </button>

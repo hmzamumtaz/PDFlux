@@ -723,11 +723,12 @@ export interface OcrResult {
   totalChars: number;
 }
 
-export async function ocrPdf(file: File, onProgress?: (page: number, total: number, msg: string) => void): Promise<OcrResult> {
+export async function ocrPdf(file: File, languages: string[], onProgress?: (page: number, total: number, msg: string) => void): Promise<OcrResult> {
   const Tesseract = await import('tesseract.js');
   const pdfjsLib = await import('pdfjs-dist');
   pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs`;
 
+  const langStr = languages.join('+');
   const buf = await readFileAsArrayBuffer(file);
   const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
   const numPages = pdfDoc.numPages;
@@ -745,7 +746,7 @@ export async function ocrPdf(file: File, onProgress?: (page: number, total: numb
     const ctx = canvas.getContext('2d')!;
     await page.render({ canvasContext: ctx, viewport, canvas }).promise;
 
-    const { data } = await Tesseract.recognize(canvas, 'eng', {
+    const { data } = await Tesseract.recognize(canvas, langStr, {
       logger: (m: any) => {
         if (m.status === 'recognizing text') {
           onProgress?.(i, numPages, `Page ${i}: ${Math.round((m.progress || 0) * 100)}% recognized`);
