@@ -1,18 +1,45 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { ArrowLeft, Loader2, FileText, AlertCircle, Check, X, Scale } from 'lucide-react';
+import { ArrowLeft, Loader2, FileText, AlertCircle, Check, X, Scale, File, User, Calendar, Printer, BookOpen } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
 import { comparePdfs, CompareResult } from '@/lib/pdf-engine';
 
-function Row({ label, value1, value2, match }: { label: string; value1: string; value2: string; match: boolean }) {
+function FileInfoCard({ info, label, side }: { info: CompareResult['file1']; label: string; side: 'left' | 'right' }) {
   return (
-    <div className="grid grid-cols-[140px_1fr_24px_1fr] gap-2 items-center py-2 border-b border-border last:border-0">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <span className="text-sm text-foreground truncate">{value1}</span>
-      <span className="flex justify-center">{match ? <Check className="w-3.5 h-3.5 text-green-500" /> : <X className="w-3.5 h-3.5 text-red-500" />}</span>
-      <span className="text-sm text-foreground truncate">{value2}</span>
+    <div className="flex-1 p-5 bg-gray-50 rounded-xl border border-border">
+      <div className="flex items-center gap-2 mb-4">
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${side === 'left' ? 'bg-blue-50' : 'bg-purple-50'}`}>
+          <File className={`w-4 h-4 ${side === 'left' ? 'text-blue-500' : 'text-purple-500'}`} />
+        </div>
+        <div>
+          <p className="text-xs font-medium text-muted-foreground">{label}</p>
+          <p className="text-sm font-semibold text-foreground truncate">{info.name}</p>
+        </div>
+      </div>
+      <div className="space-y-2.5">
+        <div className="flex items-center gap-2"><FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="text-sm text-foreground">{info.pages} pages</span></div>
+        <div className="flex items-center gap-2"><File className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="text-sm text-foreground">{(info.fileSize / 1024).toFixed(1)} KB</span></div>
+        {info.title && <div className="flex items-center gap-2"><BookOpen className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="text-sm text-foreground">{info.title}</span></div>}
+        {info.author && <div className="flex items-center gap-2"><User className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="text-sm text-foreground">{info.author}</span></div>}
+        {info.creator && <div className="flex items-center gap-2"><Printer className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="text-sm text-foreground">{info.creator}</span></div>}
+        {info.producer && <div className="flex items-center gap-2"><span className="w-3.5 h-3.5 text-muted-foreground shrink-0 text-center text-[10px] font-bold">P</span><span className="text-sm text-foreground">{info.producer}</span></div>}
+        {info.creationDate && <div className="flex items-center gap-2"><Calendar className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="text-sm text-foreground">{info.creationDate}</span></div>}
+        {info.pageWidths.length > 0 && <div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">📐</span><span className="text-sm text-foreground">{info.pageWidths[0]} × {info.pageHeights[0]} pt</span></div>}
+      </div>
+    </div>
+  );
+}
+
+function ComparisonRow({ label, value1, value2, match, icon }: { label: string; value1: string; value2: string; match: boolean; icon: React.ReactNode }) {
+  return (
+    <div className={`flex items-center gap-4 p-3 rounded-lg ${match ? 'bg-green-50/50' : 'bg-red-50/50'}`}>
+      <div className="w-8 h-8 rounded-lg bg-white border border-border flex items-center justify-center shrink-0">{icon}</div>
+      <span className="text-xs font-medium text-muted-foreground w-20 shrink-0">{label}</span>
+      <div className="flex-1 text-right"><span className={`text-sm ${match ? 'text-green-700' : 'text-red-700'}`}>{value1}</span></div>
+      <div className="w-6 flex justify-center">{match ? <Check className="w-3.5 h-3.5 text-green-500" /> : <X className="w-3.5 h-3.5 text-red-500" />}</div>
+      <div className="flex-1"><span className={`text-sm ${match ? 'text-green-700' : 'text-red-700'}`}>{value2}</span></div>
     </div>
   );
 }
@@ -20,8 +47,8 @@ function Row({ label, value1, value2, match }: { label: string; value1: string; 
 function SimilarityBar({ value }: { value: number }) {
   const color = value === 100 ? 'bg-green-500' : value >= 70 ? 'bg-amber-500' : 'bg-red-500';
   return (
-    <div className="w-full bg-gray-200 rounded-full h-2.5">
-      <div className={`${color} h-2.5 rounded-full transition-all duration-500`} style={{ width: `${value}%` }} />
+    <div className="w-full bg-gray-200 rounded-full h-3">
+      <div className={`${color} h-3 rounded-full transition-all duration-500`} style={{ width: `${value}%` }} />
     </div>
   );
 }
@@ -48,7 +75,7 @@ export default function ComparePdfPage() {
 
   return (
     <div className="min-h-screen bg-gray-50/50">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors mb-6">
           <ArrowLeft className="w-4 h-4" /> Back to all tools
         </Link>
@@ -104,7 +131,7 @@ export default function ComparePdfPage() {
 
               {/* Text similarity */}
               <div className="p-5 bg-gray-50 rounded-xl border border-border">
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-semibold text-foreground">Text Similarity</h3>
                   <span className="text-2xl font-bold text-foreground">{result.textSimilarity}%</span>
                 </div>
@@ -114,20 +141,24 @@ export default function ComparePdfPage() {
                 </p>
               </div>
 
-              {/* File comparison table */}
+              {/* File info cards */}
+              <div className="flex flex-col sm:flex-row gap-4">
+                <FileInfoCard info={result.file1} label="File 1" side="left" />
+                <FileInfoCard info={result.file2} label="File 2" side="right" />
+              </div>
+
+              {/* Detailed comparison */}
               <div className="p-5 bg-gray-50 rounded-xl border border-border">
-                <div className="grid grid-cols-[140px_1fr_24px_1fr] gap-2 pb-2 mb-1 border-b border-border">
-                  <span className="text-xs font-semibold text-muted-foreground">Property</span>
-                  <span className="text-xs font-semibold text-foreground">{result.file1.name}</span>
-                  <span />
-                  <span className="text-xs font-semibold text-foreground">{result.file2.name}</span>
+                <h3 className="text-sm font-semibold text-foreground mb-3">Detailed Comparison</h3>
+                <div className="space-y-2">
+                  <ComparisonRow label="Pages" value1={String(result.file1.pages)} value2={String(result.file2.pages)} match={result.file1.pages === result.file2.pages} icon={<FileText className="w-4 h-4 text-muted-foreground" />} />
+                  <ComparisonRow label="File size" value1={`${(result.file1.fileSize / 1024).toFixed(1)} KB`} value2={`${(result.file2.fileSize / 1024).toFixed(1)} KB`} match={result.file1.fileSize === result.file2.fileSize} icon={<File className="w-4 h-4 text-muted-foreground" />} />
+                  <ComparisonRow label="Title" value1={result.file1.title || '(none)'} value2={result.file2.title || '(none)'} match={result.file1.title === result.file2.title} icon={<BookOpen className="w-4 h-4 text-muted-foreground" />} />
+                  <ComparisonRow label="Author" value1={result.file1.author || '(none)'} value2={result.file2.author || '(none)'} match={result.file1.author === result.file2.author} icon={<User className="w-4 h-4 text-muted-foreground" />} />
+                  <ComparisonRow label="Creator" value1={result.file1.creator || '(none)'} value2={result.file2.creator || '(none)'} match={result.file1.creator === result.file2.creator} icon={<Printer className="w-4 h-4 text-muted-foreground" />} />
+                  <ComparisonRow label="Producer" value1={result.file1.producer || '(none)'} value2={result.file2.producer || '(none)'} match={result.file1.producer === result.file2.producer} icon={<span className="text-sm font-bold text-muted-foreground">P</span>} />
+                  <ComparisonRow label="Page size" value1={result.file1.pageWidths.length > 0 ? `${result.file1.pageWidths[0]} × ${result.file1.pageHeights[0]} pt` : '-'} value2={result.file2.pageWidths.length > 0 ? `${result.file2.pageWidths[0]} × ${result.file2.pageHeights[0]} pt` : '-'} match={result.file1.pageWidths[0] === result.file2.pageWidths[0] && result.file1.pageHeights[0] === result.file2.pageHeights[0]} icon={<Scale className="w-4 h-4 text-muted-foreground" />} />
                 </div>
-                <Row label="Pages" value1={String(result.file1.pages)} value2={String(result.file2.pages)} match={result.file1.pages === result.file2.pages} />
-                <Row label="File size" value1={`${(result.file1.fileSize / 1024).toFixed(1)} KB`} value2={`${(result.file2.fileSize / 1024).toFixed(1)} KB`} match={result.file1.fileSize === result.file2.fileSize} />
-                <Row label="Title" value1={result.file1.title || '(none)'} value2={result.file2.title || '(none)'} match={result.file1.title === result.file2.title} />
-                <Row label="Author" value1={result.file1.author || '(none)'} value2={result.file2.author || '(none)'} match={result.file1.author === result.file2.author} />
-                <Row label="Creator" value1={result.file1.creator || '(none)'} value2={result.file2.creator || '(none)'} match={result.file1.creator === result.file2.creator} />
-                <Row label="Page size" value1={result.file1.pageWidths.length > 0 ? `${result.file1.pageWidths[0]} × ${result.file1.pageHeights[0]} pt` : '-'} value2={result.file2.pageWidths.length > 0 ? `${result.file2.pageWidths[0]} × ${result.file2.pageHeights[0]} pt` : '-'} match={result.file1.pageWidths[0] === result.file2.pageWidths[0] && result.file1.pageHeights[0] === result.file2.pageHeights[0]} />
               </div>
 
               {/* Page-by-page differences */}

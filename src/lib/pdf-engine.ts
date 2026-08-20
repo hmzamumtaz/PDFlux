@@ -326,8 +326,8 @@ export async function redactPdf(file: File, redactions: { x: number; y: number; 
 }
 
 export interface CompareResult {
-  file1: { name: string; pages: number; fileSize: number; title: string; author: string; creator: string; pageWidths: number[]; pageHeights: number[]; textByPage: string[] };
-  file2: { name: string; pages: number; fileSize: number; title: string; author: string; creator: string; pageWidths: number[]; pageHeights: number[]; textByPage: string[] };
+  file1: { name: string; pages: number; fileSize: number; title: string; author: string; creator: string; producer: string; creationDate: string; pageWidths: number[]; pageHeights: number[]; textByPage: string[] };
+  file2: { name: string; pages: number; fileSize: number; title: string; author: string; creator: string; producer: string; creationDate: string; pageWidths: number[]; pageHeights: number[]; textByPage: string[] };
   identical: boolean;
   pagesSame: boolean;
   textSimilarity: number;
@@ -342,11 +342,14 @@ export async function comparePdfs(file1: File, file2: File): Promise<CompareResu
     const buf = await readFileAsArrayBuffer(file);
     const doc = await loadPdf(buf);
     const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+    const meta = await pdfDoc.getMetadata();
+    const info = (meta.info || {}) as Record<string, string>;
 
-    const meta = await doc.getTitle()?.length ? doc : null;
-    const title = doc.getTitle() || '';
-    const author = doc.getAuthor() || '';
-    const creator = doc.getCreator() || '';
+    const title = info['Title'] || '';
+    const author = info['Author'] || '';
+    const creator = info['Creator'] || '';
+    const producer = info['Producer'] || '';
+    const creationDate = info['CreationDate'] || info['ModDate'] || '';
 
     const pageWidths: number[] = [];
     const pageHeights: number[] = [];
@@ -371,6 +374,8 @@ export async function comparePdfs(file1: File, file2: File): Promise<CompareResu
       title,
       author,
       creator,
+      producer,
+      creationDate,
       pageWidths,
       pageHeights,
       textByPage,
@@ -402,14 +407,7 @@ export async function comparePdfs(file1: File, file2: File): Promise<CompareResu
   }
   const textSimilarity = maxPages > 0 ? Math.round(totalSimilarity / maxPages) : 100;
 
-  return {
-    file1: info1,
-    file2: info2,
-    identical,
-    pagesSame,
-    textSimilarity,
-    differingPages,
-  };
+  return { file1: info1, file2: info2, identical, pagesSame, textSimilarity, differingPages };
 }
 
 export async function getPdfInfo(file: File) {
