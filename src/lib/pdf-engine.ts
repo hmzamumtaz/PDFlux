@@ -587,15 +587,28 @@ export async function createPdfFromText(text: string, title?: string): Promise<B
 }
 
 async function translateChunk(text: string, from: string, to: string): Promise<string> {
-  // Google Translate free unlimited API (no key needed)
+  const fromLang = from === 'autodetect' ? 'auto' : from;
+
+  // Lingva Translate (free, open-source, all languages, no limits)
+  const lingvaLangs: Record<string, string> = {
+    en: 'en', es: 'es', fr: 'fr', de: 'de', it: 'it', pt: 'pt', ru: 'ru',
+    zh: 'zh', ja: 'ja', ko: 'ko', ar: 'ar', hi: 'hi', nl: 'nl',
+    sv: 'sv', pl: 'pl', tr: 'tr', vi: 'vi', th: 'th', id: 'id',
+    bn: 'en', bg: 'bg', cs: 'cs', da: 'da', fi: 'fi', el: 'el',
+    he: 'he', hu: 'hu', is: 'is', lv: 'lv', lt: 'lt', no: 'no',
+    fa: 'fa', ro: 'ro', sr: 'sr', sk: 'sk', sl: 'sl', hr: 'hr',
+    uk: 'uk', tl: 'tl', ta: 'ta', ur: 'ur',
+  };
+
+  const lingvaFrom = lingvaLangs[fromLang] || 'auto';
+  const lingvaTo = lingvaLangs[to] || 'en';
+
   try {
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${from}&tl=${to}&dt=t&q=${encodeURIComponent(text)}`;
+    const url = `https://lingva.ml/api/v1/${lingvaFrom}/${lingvaTo}/${encodeURIComponent(text)}`;
     const res = await fetch(url);
     if (res.ok) {
       const data = await res.json();
-      if (data && data[0]) {
-        return data[0].map((s: any[]) => s[0]).join('');
-      }
+      if (data?.translation) return data.translation;
     }
   } catch { /* fall through */ }
 
