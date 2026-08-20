@@ -735,11 +735,11 @@ export async function verifyOcrLanguages(file: File, selectedLangs: string[], on
   const pdfjsLib = await import('pdfjs-dist');
   pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs`;
 
-  onProgress?.('Loading PDF...');
+  onProgress?.('Scanning...');
   const buf = await readFileAsArrayBuffer(file);
   const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
   const page = await pdfDoc.getPage(1);
-  const viewport = page.getViewport({ scale: 3 });
+  const viewport = page.getViewport({ scale: 1 });
   const canvas = document.createElement('canvas');
   canvas.width = viewport.width;
   canvas.height = viewport.height;
@@ -749,7 +749,6 @@ export async function verifyOcrLanguages(file: File, selectedLangs: string[], on
   const selectedConfidence: { code: string; confidence: number }[] = [];
 
   for (const lang of selectedLangs) {
-    onProgress?.(`Verifying ${lang}...`);
     try {
       const { data } = await Tesseract.recognize(canvas, lang);
       selectedConfidence.push({ code: lang, confidence: Math.round(data.confidence) });
@@ -758,35 +757,17 @@ export async function verifyOcrLanguages(file: File, selectedLangs: string[], on
     }
   }
 
-  // Scan with a broad multi-language model to detect unexpected languages
   const commonLangs = ['eng', 'fra', 'deu', 'spa', 'ita', 'por', 'rus', 'ara', 'hin', 'chi_sim', 'jpn', 'kor'];
-  const probeLangs = commonLangs.filter(l => !selectedLangs.includes(l));
-  const probeString = probeLangs.join('+');
+  const probeLangs = commonLangs.filter(l => !selectedLangs.includes(l)).slice(0, 3);
+  const detectedExtras: { code: string; confidence: number }[] = [];
 
-  let detectedExtras: { code: string; confidence: number }[] = [];
-  if (probeLangs.length > 0) {
-    onProgress?.('Detecting additional languages...');
+  for (const lang of probeLangs) {
     try {
-      const { data } = await Tesseract.recognize(canvas, probeString);
-      const words = (data as any).words || [];
-      const scriptLangMap: Record<string, string> = {
-        arabic: 'ara', cyrillic: 'rus', devanagari: 'hin', cjk: 'chi_sim',
-        hangul: 'kor', hiragana: 'jpn', katakana: 'jpn', greek: 'ell', hebrew: 'heb', thai: 'tha',
-      };
-      const scripts = (data as any).script || '';
-      const lines = (data as any).lines || [];
-
-      // Check confidence for each probe language individually (sample only 2)
-      const sampleLangs = probeLangs.slice(0, 2);
-      for (const lang of sampleLangs) {
-        try {
-          const r = await Tesseract.recognize(canvas, lang);
-          if (r.data.confidence > 50 && r.data.text.trim().length > 5) {
-            detectedExtras.push({ code: lang, confidence: Math.round(r.data.confidence) });
-          }
-        } catch { /* skip */ }
+      const { data } = await Tesseract.recognize(canvas, lang);
+      if (data.confidence > 50 && data.text.trim().length > 3) {
+        detectedExtras.push({ code: lang, confidence: Math.round(data.confidence) });
       }
-    } catch { /* skip probe */ }
+    } catch { /* skip */ }
   }
 
   const avgSelected = selectedConfidence.reduce((s, c) => s + c.confidence, 0) / selectedConfidence.length;
@@ -799,8 +780,8 @@ export async function verifyOcrLanguages(file: File, selectedLangs: string[], on
       selectedConfidence,
       detectedSample: '',
       message: lowest >= 70
-        ? `Languages verified with high confidence (avg ${Math.round(avgSelected)}%). Ready for OCR.`
-        : `Languages verified (avg ${Math.round(avgSelected)}%). Results may vary for some pages.`,
+        ? `Languages verified (avg ${Math.round(avgSelected)}%). Ready for OCR.`
+        : `Languages verified (avg ${Math.round(avgSelected)}%). Results may vary.`,
     };
   }
 
@@ -809,7 +790,7 @@ export async function verifyOcrLanguages(file: File, selectedLangs: string[], on
       matches: false,
       selectedConfidence,
       detectedSample: highExtras.map(e => e.code).join(', '),
-      message: `Selected languages scored very low (avg ${Math.round(avgSelected)}%). The document likely uses different languages. Please reselect.`,
+      message: `Low confidence (avg ${Math.round(avgSelected)}%). The document likely uses different languages.`,
     };
   }
 
@@ -822,7 +803,7 @@ export async function verifyOcrLanguages(file: File, selectedLangs: string[], on
       matches: false,
       selectedConfidence,
       detectedSample: highExtras.map(e => e.code).join(', '),
-      message: `Detected additional languages not in your selection: ${extraNames.join(', ')}. Add them for better accuracy.`,
+      message: `Additional languages detected: ${extraNames.join(', ')}. Add them for better accuracy.`,
     };
   }
 
@@ -830,7 +811,7 @@ export async function verifyOcrLanguages(file: File, selectedLangs: string[], on
     matches: true,
     selectedConfidence,
     detectedSample: '',
-    message: `Languages verified (avg ${Math.round(avgSelected)}%). You may proceed with OCR.`,
+    message: `Languages verified (avg ${Math.round(avgSelected)}%).`,
   };
 }
 
