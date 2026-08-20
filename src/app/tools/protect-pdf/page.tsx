@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { ArrowLeft, Loader2, Lock, AlertCircle, Check, Download, Trash2, FileDown, List, LayoutGrid, ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Loader2, Lock, AlertCircle, Check, Download, Trash2, FileDown, List, LayoutGrid, ChevronLeft, ChevronRight, Eye, EyeOff, ChevronDown, ChevronUp } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
 import { protectPdf, downloadBlob, renderPdfPages } from '@/lib/pdf-engine';
@@ -10,7 +10,6 @@ interface FilePassword {
   file: File;
   password: string;
   confirmPassword: string;
-  showPassword: boolean;
 }
 
 interface ProcessedResult {
@@ -18,8 +17,8 @@ interface ProcessedResult {
   result: Blob;
 }
 
-function ResultCard({ sourceFile, result, index, onDownload, onDelete }: {
-  sourceFile: File; result: Blob; index: number; onDownload: () => void; onDelete: () => void;
+function ResultCard({ sourceFile, result, onDownload, onDelete }: {
+  sourceFile: File; result: Blob; onDownload: () => void; onDelete: () => void;
 }) {
   const name = sourceFile.name.replace(/\.pdf$/i, '_protected.pdf');
   return (
@@ -41,33 +40,64 @@ function ResultGridPreview({ results, currentIndex, onPrev, onNext, onDownload, 
   const r = results[currentIndex];
   useEffect(() => {
     let cancelled = false;
-    let objectUrl: string | null = null;
     const load = async () => {
       setPreviewUrl(null);
       try {
         const pages = await renderPdfPages(r.sourceFile, [1]);
         if (!cancelled && pages[0]) setPreviewUrl(pages[0].url);
       } catch {
-        objectUrl = URL.createObjectURL(r.result);
-        if (!cancelled) setPreviewUrl(objectUrl);
+        const url = URL.createObjectURL(r.result);
+        if (!cancelled) setPreviewUrl(url);
       }
     };
     load();
-    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+    return () => { cancelled = true; };
   }, [currentIndex]);
   const name = r.sourceFile.name.replace(/\.pdf$/i, '_protected.pdf');
   return (
-    <div className="flex flex-col items-center gap-4">
-      <div className="w-full bg-gray-50 rounded-xl border border-border overflow-hidden flex items-center justify-center" style={{ minHeight: 300, maxHeight: 400 }}>
-        {previewUrl ? <img src={previewUrl} alt="Preview" className="max-w-full max-h-[400px] object-contain" /> : <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />}
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-full bg-gray-50 rounded-xl border border-border overflow-hidden flex items-center justify-center" style={{ minHeight: 250, maxHeight: 350 }}>
+        {previewUrl ? <img src={previewUrl} alt="Preview" className="max-w-full max-h-[350px] object-contain" /> : <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />}
       </div>
       <p className="text-sm font-medium text-foreground truncate max-w-full">{name}</p>
       <div className="flex items-center gap-3">
-        <button onClick={onDelete} className="p-2.5 rounded-xl border border-border hover:bg-red-50 hover:border-red-200 hover:text-red-600 text-muted-foreground transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>
-        <button onClick={onPrev} disabled={currentIndex === 0} className="p-2.5 rounded-xl border border-border hover:bg-gray-50 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="Previous"><ChevronLeft className="w-4 h-4" /></button>
-        <span className="text-xs text-muted-foreground font-medium tabular-nums">{currentIndex + 1} / {results.length}</span>
-        <button onClick={onNext} disabled={currentIndex === results.length - 1} className="p-2.5 rounded-xl border border-border hover:bg-gray-50 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="Next"><ChevronRight className="w-4 h-4" /></button>
-        <button onClick={onDownload} className="p-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white transition-colors" title="Download"><Download className="w-4 h-4" /></button>
+        <button onClick={onDelete} className="p-2 rounded-xl border border-border hover:bg-red-50 hover:text-red-600 text-muted-foreground transition-colors"><Trash2 className="w-4 h-4" /></button>
+        <button onClick={onPrev} disabled={currentIndex === 0} className="p-2 rounded-xl border border-border hover:bg-gray-50 text-muted-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"><ChevronLeft className="w-4 h-4" /></button>
+        <span className="text-xs text-muted-foreground font-medium tabular-nums">{currentIndex + 1}/{results.length}</span>
+        <button onClick={onNext} disabled={currentIndex === results.length - 1} className="p-2 rounded-xl border border-border hover:bg-gray-50 text-muted-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"><ChevronRight className="w-4 h-4" /></button>
+        <button onClick={onDownload} className="p-2 rounded-xl bg-primary hover:bg-primary-hover text-white transition-colors"><Download className="w-4 h-4" /></button>
+      </div>
+    </div>
+  );
+}
+
+function FileGridPreview({ files, currentIndex, onPrev, onNext }: {
+  files: File[]; currentIndex: number; onPrev: () => void; onNext: () => void;
+}) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const file = files[currentIndex];
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setPreviewUrl(null);
+      try {
+        const pages = await renderPdfPages(file, [1]);
+        if (!cancelled && pages[0]) setPreviewUrl(pages[0].url);
+      } catch { setPreviewUrl(null); }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [currentIndex]);
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-full bg-gray-50 rounded-xl border border-border overflow-hidden flex items-center justify-center" style={{ minHeight: 250, maxHeight: 350 }}>
+        {previewUrl ? <img src={previewUrl} alt="Preview" className="max-w-full max-h-[350px] object-contain" /> : <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />}
+      </div>
+      <p className="text-sm font-medium text-foreground truncate max-w-full">{file.name}</p>
+      <div className="flex items-center gap-3">
+        <button onClick={onPrev} disabled={currentIndex === 0} className="p-2 rounded-xl border border-border hover:bg-gray-50 text-muted-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"><ChevronLeft className="w-4 h-4" /></button>
+        <span className="text-xs text-muted-foreground font-medium tabular-nums">{currentIndex + 1}/{files.length}</span>
+        <button onClick={onNext} disabled={currentIndex === files.length - 1} className="p-2 rounded-xl border border-border hover:bg-gray-50 text-muted-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"><ChevronRight className="w-4 h-4" /></button>
       </div>
     </div>
   );
@@ -76,15 +106,19 @@ function ResultGridPreview({ results, currentIndex, onPrev, onNext, onDownload, 
 function ViewToggle({ mode, onChange }: { mode: 'list' | 'grid'; onChange: (m: 'list' | 'grid') => void }) {
   return (
     <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
-      <button onClick={() => onChange('list')} className={`p-1.5 rounded-md transition-colors ${mode === 'list' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} title="List view"><List className="w-4 h-4" /></button>
-      <button onClick={() => onChange('grid')} className={`p-1.5 rounded-md transition-colors ${mode === 'grid' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} title="Grid view"><LayoutGrid className="w-4 h-4" /></button>
+      <button onClick={() => onChange('list')} className={`p-1.5 rounded-md transition-colors ${mode === 'list' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}><List className="w-4 h-4" /></button>
+      <button onClick={() => onChange('grid')} className={`p-1.5 rounded-md transition-colors ${mode === 'grid' ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}><LayoutGrid className="w-4 h-4" /></button>
     </div>
   );
 }
 
 export default function ProtectPdfPage() {
   const [files, setFiles] = useState<File[]>([]);
-  const [filePasswords, setFilePasswords] = useState<FilePassword[]>([]);
+  const [masterPassword, setMasterPassword] = useState('');
+  const [masterConfirm, setMasterConfirm] = useState('');
+  const [showMaster, setShowMaster] = useState(false);
+  const [individualMode, setIndividualMode] = useState(false);
+  const [filePasswords, setFilePasswords] = useState<Record<number, { password: string; confirmPassword: string }>>({});
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState<{ current: number; total: number; currentFile: string } | null>(null);
   const [results, setResults] = useState<ProcessedResult[]>([]);
@@ -99,35 +133,45 @@ export default function ProtectPdfPage() {
 
   const handleFilesSelected = useCallback((selected: File[]) => {
     setFiles(selected);
-    setFilePasswords(selected.map(f => ({ file: f, password: '', confirmPassword: '', showPassword: false })));
+    setFilePasswords({});
     setResults([]);
     setError(null);
   }, []);
 
-  const updatePassword = useCallback((index: number, field: keyof FilePassword, value: any) => {
-    setFilePasswords(prev => prev.map((fp, i) => i === index ? { ...fp, [field]: value } : fp));
-  }, []);
+  const getFilePassword = useCallback((idx: number): { password: string; confirmPassword: string } => {
+    if (!individualMode) return { password: masterPassword, confirmPassword: masterConfirm };
+    return filePasswords[idx] || { password: '', confirmPassword: '' };
+  }, [individualMode, masterPassword, masterConfirm, filePasswords]);
 
-  const handleRemoveFile = useCallback((index: number) => {
-    setFiles(prev => prev.filter((_, i) => i !== index));
-    setFilePasswords(prev => prev.filter((_, i) => i !== index));
+  const updateFilePassword = useCallback((idx: number, field: 'password' | 'confirmPassword', value: string) => {
+    setFilePasswords(prev => ({
+      ...prev,
+      [idx]: { ...prev[idx] || { password: '', confirmPassword: '' }, [field]: value },
+    }));
   }, []);
 
   const handleProtectAll = useCallback(async () => {
-    if (filePasswords.length === 0) return;
-    for (const fp of filePasswords) {
+    if (files.length === 0) return;
+
+    const fps: FilePassword[] = files.map((file, i) => {
+      const fp = getFilePassword(i);
+      return { file, password: fp.password, confirmPassword: fp.confirmPassword };
+    });
+
+    for (const fp of fps) {
       if (!fp.password) { setError(`Please set a password for ${fp.file.name}`); return; }
       if (fp.password !== fp.confirmPassword) { setError(`Passwords don't match for ${fp.file.name}`); return; }
       if (fp.password.length < 3) { setError(`Password for ${fp.file.name} must be at least 3 characters`); return; }
     }
+
     setProcessing(true);
     setError(null);
     setResults([]);
     const newResults: ProcessedResult[] = [];
     try {
-      for (let i = 0; i < filePasswords.length; i++) {
-        const fp = filePasswords[i];
-        setProgress({ current: i + 1, total: filePasswords.length, currentFile: fp.file.name });
+      for (let i = 0; i < fps.length; i++) {
+        const fp = fps[i];
+        setProgress({ current: i + 1, total: fps.length, currentFile: fp.file.name });
         const blob = await protectPdf(fp.file, fp.password, undefined, {
           allowPrinting, allowModifying, allowCopying, allowFillingForms: true,
         });
@@ -141,7 +185,7 @@ export default function ProtectPdfPage() {
     } finally {
       setProcessing(false);
     }
-  }, [filePasswords, allowPrinting, allowModifying, allowCopying]);
+  }, [files, getFilePassword, allowPrinting, allowModifying, allowCopying]);
 
   const handleDownloadResult = useCallback((r: ProcessedResult) => {
     downloadBlob(r.result, r.sourceFile.name.replace(/\.pdf$/i, '_protected.pdf'));
@@ -157,7 +201,9 @@ export default function ProtectPdfPage() {
 
   const handleReset = useCallback(() => {
     setFiles([]);
-    setFilePasswords([]);
+    setMasterPassword('');
+    setMasterConfirm('');
+    setFilePasswords({});
     setResults([]);
     setError(null);
   }, []);
@@ -185,119 +231,145 @@ export default function ProtectPdfPage() {
           </div>
         ) : (
           <div className="flex flex-col lg:flex-row gap-6">
-            {/* Left: Files with per-file passwords */}
+            {/* Left: File preview */}
             <div className="flex-1 min-w-0 bg-white rounded-2xl border border-border p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-foreground">{files.length} file{files.length > 1 ? 's' : ''}</h3>
                 {files.length > 1 && <ViewToggle mode={leftView} onChange={setLeftView} />}
               </div>
               {leftView === 'list' ? (
-                <div className="space-y-3">
-                  {filePasswords.map((fp, i) => (
-                    <div key={i} className="p-4 rounded-xl border border-border bg-gray-50/50 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium text-foreground truncate flex-1 mr-2">{fp.file.name}</p>
-                        <button onClick={() => handleRemoveFile(i)} className="p-1.5 rounded-lg hover:bg-red-50 hover:text-red-600 text-muted-foreground transition-colors shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </div>
-                      <div className="flex gap-2">
-                        <div className="flex-1 relative">
-                          <input type={fp.showPassword ? 'text' : 'password'} value={fp.password} onChange={(e) => updatePassword(i, 'password', e.target.value)} placeholder="Password" className="w-full px-3 py-2 pr-8 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
-                          <button type="button" onClick={() => updatePassword(i, 'showPassword', !fp.showPassword)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><Eye className="w-3.5 h-3.5" /></button>
-                        </div>
-                        <div className="flex-1">
-                          <input type={fp.showPassword ? 'text' : 'password'} value={fp.confirmPassword} onChange={(e) => updatePassword(i, 'confirmPassword', e.target.value)} placeholder="Confirm" className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
-                        </div>
-                      </div>
-                      {fp.password && fp.confirmPassword && fp.password !== fp.confirmPassword && (
-                        <p className="text-xs text-destructive">Passwords don't match</p>
+                <div className="space-y-2">
+                  {files.map((f, i) => (
+                    <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-border bg-gray-50/50">
+                      <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0"><Lock className="w-4 h-4 text-amber-500" /></div>
+                      <p className="text-sm text-foreground truncate flex-1">{f.name}</p>
+                      {!individualMode ? (
+                        <span className="text-xs text-muted-foreground bg-gray-100 px-2 py-0.5 rounded">Same password</span>
+                      ) : filePasswords[i]?.password ? (
+                        <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded flex items-center gap-1"><Check className="w-3 h-3" /> Set</span>
+                      ) : (
+                        <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded">Needs password</span>
                       )}
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                  {filePasswords.map((fp, i) => (
-                    <div key={i} className="p-4 rounded-xl border border-border bg-gray-50/50 space-y-3">
-                      <p className="text-xs font-medium text-foreground truncate">{fp.file.name}</p>
-                      <div className="space-y-2">
-                        <input type={fp.showPassword ? 'text' : 'password'} value={fp.password} onChange={(e) => updatePassword(i, 'password', e.target.value)} placeholder="Password" className="w-full px-3 py-2 border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
-                        <input type={fp.showPassword ? 'text' : 'password'} value={fp.confirmPassword} onChange={(e) => updatePassword(i, 'confirmPassword', e.target.value)} placeholder="Confirm" className="w-full px-3 py-2 border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
-                        {fp.password && fp.confirmPassword && fp.password !== fp.confirmPassword && (
-                          <p className="text-[10px] text-destructive">Passwords don't match</p>
-                        )}
-                      </div>
-                      <button onClick={() => updatePassword(i, 'showPassword', !fp.showPassword)} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
-                        {fp.showPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                        {fp.showPassword ? 'Hide' : 'Show'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                <FileGridPreview files={files} currentIndex={leftGridIdx} onPrev={() => setLeftGridIdx(i => Math.max(0, i - 1))} onNext={() => setLeftGridIdx(i => Math.min(files.length - 1, i + 1))} />
               )}
             </div>
 
-            {/* Right: Permissions + Actions + Results */}
+            {/* Right: Password + Permissions + Actions */}
             <div className="w-full lg:w-96 shrink-0">
               <div className="lg:sticky lg:top-8 space-y-4">
-                <div className="bg-white rounded-2xl border border-border p-6 shadow-sm">
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-foreground mb-2">Permissions</label>
-                      <div className="space-y-2.5">
-                        <label className="flex items-center gap-3 cursor-pointer group">
-                          <input type="checkbox" checked={allowPrinting} onChange={(e) => setAllowPrinting(e.target.checked)} className="w-4 h-4 rounded border-border text-primary focus:ring-primary/20" />
-                          <span className="text-sm text-foreground group-hover:text-primary transition-colors">Allow printing</span>
-                        </label>
-                        <label className="flex items-center gap-3 cursor-pointer group">
-                          <input type="checkbox" checked={allowModifying} onChange={(e) => setAllowModifying(e.target.checked)} className="w-4 h-4 rounded border-border text-primary focus:ring-primary/20" />
-                          <span className="text-sm text-foreground group-hover:text-primary transition-colors">Allow modifying</span>
-                        </label>
-                        <label className="flex items-center gap-3 cursor-pointer group">
-                          <input type="checkbox" checked={allowCopying} onChange={(e) => setAllowCopying(e.target.checked)} className="w-4 h-4 rounded border-border text-primary focus:ring-primary/20" />
-                          <span className="text-sm text-foreground group-hover:text-primary transition-colors">Allow copying text</span>
-                        </label>
-                      </div>
+                <div className="bg-white rounded-2xl border border-border p-6 shadow-sm space-y-5">
+                  {/* Password section */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-sm font-semibold text-foreground">Password</label>
+                      {files.length > 1 && (
+                        <button onClick={() => setIndividualMode(!individualMode)} className="text-xs text-primary hover:text-primary-hover transition-colors flex items-center gap-1">
+                          {individualMode ? <><ChevronUp className="w-3 h-3" /> Use one password</> : <><ChevronDown className="w-3 h-3" /> Set per file</>}
+                        </button>
+                      )}
                     </div>
 
-                    {error && (
-                      <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 animate-fade-in">
-                        <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
-                        <p className="text-xs text-destructive">{error}</p>
-                      </div>
-                    )}
-
-                    {progress && (
-                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl animate-fade-in">
-                        <div className="flex items-center gap-2 mb-2"><Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" /><p className="text-xs font-medium text-blue-800">{progress.current}/{progress.total}: {progress.currentFile}</p></div>
-                        <div className="w-full bg-blue-200 rounded-full h-1.5"><div className="bg-blue-600 h-1.5 rounded-full transition-all duration-300" style={{ width: `${(progress.current / progress.total) * 100}%` }} /></div>
-                      </div>
-                    )}
-
-                    {results.length > 0 && !processing ? (
-                      <div>
-                        <div className="flex items-center justify-between mb-3">
-                          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Check className="w-4 h-4 text-green-500" />{results.length} ready</h3>
-                          <ViewToggle mode={rightView} onChange={setRightView} />
+                    {!individualMode ? (
+                      <div className="space-y-3">
+                        <div className="relative">
+                          <input type={showMaster ? 'text' : 'password'} value={masterPassword} onChange={(e) => setMasterPassword(e.target.value)} placeholder="Enter password" className="w-full px-4 py-2.5 pr-10 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
+                          <button type="button" onClick={() => setShowMaster(!showMaster)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                            {showMaster ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
                         </div>
-                        {rightView === 'list' ? (
-                          <div className="space-y-2 max-h-96 overflow-y-auto">
-                            {results.map((r, i) => <ResultCard key={i} sourceFile={r.sourceFile} result={r.result} index={i} onDownload={() => handleDownloadResult(r)} onDelete={() => handleDeleteResult(i)} />)}
-                          </div>
-                        ) : (
-                          <ResultGridPreview results={results} currentIndex={rightGridIdx} onPrev={() => setRightGridIdx(i => Math.max(0, i - 1))} onNext={() => setRightGridIdx(i => Math.min(results.length - 1, i + 1))} onDownload={() => handleDownloadResult(results[rightGridIdx])} onDelete={() => { handleDeleteResult(rightGridIdx); setRightGridIdx(i => Math.min(i, results.length - 2)); }} />
+                        <div className="relative">
+                          <input type={showMaster ? 'text' : 'password'} value={masterConfirm} onChange={(e) => setMasterConfirm(e.target.value)} placeholder="Confirm password" className="w-full px-4 py-2.5 pr-10 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
+                        </div>
+                        {masterPassword && masterConfirm && masterPassword !== masterConfirm && (
+                          <p className="text-xs text-destructive">Passwords do not match</p>
                         )}
-                        <div className="flex gap-2 mt-4">
-                          {results.length > 1 && <button onClick={handleDownloadAll} className="flex-1 px-4 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors flex items-center justify-center gap-1.5"><FileDown className="w-3.5 h-3.5" /> Download All</button>}
-                          <button onClick={handleReset} className="flex-1 px-4 py-2.5 bg-muted text-foreground rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors">Delete All</button>
-                        </div>
                       </div>
                     ) : (
-                      <button onClick={handleProtectAll} disabled={processing || filePasswords.length === 0} className={`w-full px-6 py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${!processing && filePasswords.length > 0 ? 'bg-amber-500 hover:bg-amber-600 text-white hover:shadow-lg hover:shadow-amber-500/25 active:scale-[0.98]' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
-                        {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-                        {processing ? 'Protecting...' : `Protect All (${filePasswords.length})`}
-                      </button>
+                      <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                        {files.map((f, i) => {
+                          const fp = filePasswords[i] || { password: '', confirmPassword: '' };
+                          return (
+                            <div key={i} className="p-3 rounded-lg border border-border bg-gray-50/50 space-y-2">
+                              <p className="text-xs font-medium text-foreground truncate">{f.name}</p>
+                              <div className="flex gap-2">
+                                <input type={showMaster ? 'text' : 'password'} value={fp.password} onChange={(e) => updateFilePassword(i, 'password', e.target.value)} placeholder="Password" className="flex-1 px-3 py-1.5 border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
+                                <input type={showMaster ? 'text' : 'password'} value={fp.confirmPassword} onChange={(e) => updateFilePassword(i, 'confirmPassword', e.target.value)} placeholder="Confirm" className="flex-1 px-3 py-1.5 border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
+                              </div>
+                              {fp.password && fp.confirmPassword && fp.password !== fp.confirmPassword && (
+                                <p className="text-[10px] text-destructive">Passwords don't match</p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
+                    <button onClick={() => setShowMaster(!showMaster)} className="mt-2 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                      {showMaster ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                      {showMaster ? 'Hide passwords' : 'Show passwords'}
+                    </button>
                   </div>
+
+                  {/* Permissions */}
+                  <div>
+                    <label className="block text-sm font-semibold text-foreground mb-2">Permissions</label>
+                    <div className="space-y-2.5">
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                        <input type="checkbox" checked={allowPrinting} onChange={(e) => setAllowPrinting(e.target.checked)} className="w-4 h-4 rounded border-border text-primary focus:ring-primary/20" />
+                        <span className="text-sm text-foreground group-hover:text-primary transition-colors">Allow printing</span>
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                        <input type="checkbox" checked={allowModifying} onChange={(e) => setAllowModifying(e.target.checked)} className="w-4 h-4 rounded border-border text-primary focus:ring-primary/20" />
+                        <span className="text-sm text-foreground group-hover:text-primary transition-colors">Allow modifying</span>
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                        <input type="checkbox" checked={allowCopying} onChange={(e) => setAllowCopying(e.target.checked)} className="w-4 h-4 rounded border-border text-primary focus:ring-primary/20" />
+                        <span className="text-sm text-foreground group-hover:text-primary transition-colors">Allow copying text</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {error && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 animate-fade-in">
+                      <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+                      <p className="text-xs text-destructive">{error}</p>
+                    </div>
+                  )}
+
+                  {progress && (
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl animate-fade-in">
+                      <div className="flex items-center gap-2 mb-2"><Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" /><p className="text-xs font-medium text-blue-800">{progress.current}/{progress.total}: {progress.currentFile}</p></div>
+                      <div className="w-full bg-blue-200 rounded-full h-1.5"><div className="bg-blue-600 h-1.5 rounded-full transition-all duration-300" style={{ width: `${(progress.current / progress.total) * 100}%` }} /></div>
+                    </div>
+                  )}
+
+                  {results.length > 0 && !processing ? (
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Check className="w-4 h-4 text-green-500" />{results.length} ready</h3>
+                        <ViewToggle mode={rightView} onChange={setRightView} />
+                      </div>
+                      {rightView === 'list' ? (
+                        <div className="space-y-2 max-h-72 overflow-y-auto">
+                          {results.map((r, i) => <ResultCard key={i} sourceFile={r.sourceFile} result={r.result} onDownload={() => handleDownloadResult(r)} onDelete={() => handleDeleteResult(i)} />)}
+                        </div>
+                      ) : (
+                        <ResultGridPreview results={results} currentIndex={rightGridIdx} onPrev={() => setRightGridIdx(i => Math.max(0, i - 1))} onNext={() => setRightGridIdx(i => Math.min(results.length - 1, i + 1))} onDownload={() => handleDownloadResult(results[rightGridIdx])} onDelete={() => { handleDeleteResult(rightGridIdx); setRightGridIdx(i => Math.min(i, results.length - 2)); }} />
+                      )}
+                      <div className="flex gap-2 mt-4">
+                        {results.length > 1 && <button onClick={handleDownloadAll} className="flex-1 px-4 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors flex items-center justify-center gap-1.5"><FileDown className="w-3.5 h-3.5" /> Download All</button>}
+                        <button onClick={handleReset} className="flex-1 px-4 py-2.5 bg-muted text-foreground rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors">Delete All</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={handleProtectAll} disabled={processing} className={`w-full px-6 py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${!processing ? 'bg-amber-500 hover:bg-amber-600 text-white hover:shadow-lg hover:shadow-amber-500/25 active:scale-[0.98]' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
+                      {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                      {processing ? 'Protecting...' : `Protect All (${files.length})`}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
