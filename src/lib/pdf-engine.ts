@@ -164,6 +164,16 @@ export async function unlockPdf(file: File): Promise<Blob> {
   return toBlob(await src.save());
 }
 
+export async function isPdfPasswordProtected(file: File): Promise<boolean> {
+  const buf = await readFileAsArrayBuffer(file);
+  try {
+    await PDFDocument.load(buf);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 export async function protectPdf(file: File, password: string): Promise<Blob> {
   const buf = await readFileAsArrayBuffer(file);
   const src = await loadPdf(buf);
@@ -353,7 +363,7 @@ async function translateChunk(text: string, from: string, to: string): Promise<s
 }
 
 export async function translateText(text: string, fromLang: string, toLang: string, onProgress?: (current: number, total: number) => void): Promise<string> {
-  const from = LANG_CODES[fromLang] || fromLang;
+  const from = fromLang === 'Auto' ? 'autodetect' : (LANG_CODES[fromLang] || fromLang);
   const to = LANG_CODES[toLang] || toLang;
   const chunkSize = 450;
   const sentences = text.replace(/\n+/g, ' ').split(/(?<=[.!?])\s+/);

@@ -7,18 +7,16 @@ import FileUpload from '@/components/FileUpload';
 import { extractTextFromPdf, translateText, downloadBlob } from '@/lib/pdf-engine';
 
 const LANGUAGES = [
-  'English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Russian',
+  'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Russian',
   'Chinese', 'Japanese', 'Korean', 'Arabic', 'Hindi', 'Dutch',
-  'Swedish', 'Polish', 'Turkish', 'Vietnamese', 'Thai', 'Indonesian',
+  'Swedish', 'Polish', 'Turkish', 'Vietnamese', 'Thai', 'Indonesian', 'English',
 ];
 
 export default function TranslatePdfPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [processing, setProcessing] = useState(false);
   const [targetLang, setTargetLang] = useState('Spanish');
-  const [sourceLang, setSourceLang] = useState('English');
   const [translated, setTranslated] = useState('');
-  const [originalText, setOriginalText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -32,13 +30,12 @@ export default function TranslatePdfPage() {
     try {
       const pages = await extractTextFromPdf(files[0]);
       const fullText = pages.join('\n\n');
-      setOriginalText(fullText);
 
       if (!fullText.trim()) {
         throw new Error('No text found in the PDF. The file may be scanned/image-based.');
       }
 
-      const result = await translateText(fullText, sourceLang, targetLang, (current, total) => {
+      const result = await translateText(fullText, 'Auto', targetLang, (current, total) => {
         setProgress({ current, total });
       });
 
@@ -51,7 +48,7 @@ export default function TranslatePdfPage() {
       setProcessing(false);
       setProgress(null);
     }
-  }, [files, targetLang, sourceLang]);
+  }, [files, targetLang]);
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(translated);
@@ -90,25 +87,17 @@ export default function TranslatePdfPage() {
             accept=".pdf"
             multiple={false}
             files={files}
-            onFilesSelected={(f) => { setFiles(f); setTranslated(''); setOriginalText(''); setError(null); setCopied(false); }}
-            onRemoveFile={() => { setFiles([]); setTranslated(''); setOriginalText(''); }}
+            onFilesSelected={(f) => { setFiles(f); setTranslated(''); setError(null); setCopied(false); }}
+            onRemoveFile={() => { setFiles([]); setTranslated(''); }}
           />
 
           {files.length > 0 && !translated && !processing && (
             <div className="mt-6 space-y-4">
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-foreground mb-2">From</label>
-                  <select value={sourceLang} onChange={(e) => setSourceLang(e.target.value)} className="w-full px-4 py-2.5 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white">
-                    {LANGUAGES.map(lang => <option key={lang} value={lang}>{lang}</option>)}
-                  </select>
-                </div>
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-foreground mb-2">To</label>
-                  <select value={targetLang} onChange={(e) => setTargetLang(e.target.value)} className="w-full px-4 py-2.5 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white">
-                    {LANGUAGES.map(lang => <option key={lang} value={lang}>{lang}</option>)}
-                  </select>
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">Translate to</label>
+                <select value={targetLang} onChange={(e) => setTargetLang(e.target.value)} className="w-full max-w-sm px-4 py-2.5 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white">
+                  {LANGUAGES.map(lang => <option key={lang} value={lang}>{lang}</option>)}
+                </select>
               </div>
               <button onClick={handleTranslate} className="px-8 py-3.5 rounded-xl font-semibold text-sm transition-all flex items-center gap-2 bg-sky-500 hover:bg-sky-600 text-white hover:shadow-lg hover:shadow-sky-500/25 active:scale-[0.98]">
                 <Languages className="w-4 h-4" /> Translate
