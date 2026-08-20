@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { ArrowLeft, Loader2, Languages, AlertCircle, FileDown, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Languages, AlertCircle, Copy, Check } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
-import { extractTextFromPdf, translateText, createPdfFromText, downloadBlob } from '@/lib/pdf-engine';
+import { extractTextFromPdf, translateText } from '@/lib/pdf-engine';
 
 const LANGUAGES = [
   'English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Russian',
@@ -28,13 +28,15 @@ export default function TranslatePdfPage() {
   const [targetLang, setTargetLang] = useState('Spanish');
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ current: number; total: number; msg: string } | null>(null);
-  const [result, setResult] = useState<{ blob: Blob; name: string } | null>(null);
+  const [translated, setTranslated] = useState('');
+  const [copied, setCopied] = useState(false);
 
   const handleTranslate = useCallback(async () => {
     if (files.length === 0) return;
     setProcessing(true);
     setError(null);
-    setResult(null);
+    setTranslated('');
+    setCopied(false);
     try {
       setProgress({ current: 0, total: 1, msg: 'Extracting text from PDF...' });
       const pages = await extractTextFromPdf(files[0]);
@@ -48,10 +50,7 @@ export default function TranslatePdfPage() {
         setProgress({ current, total, msg: `Translating chunk ${current} of ${total}...` });
       });
 
-      setProgress({ current: 1, total: 1, msg: 'Creating translated PDF...' });
-      const blob = await createPdfFromText(result);
-      const name = files[0].name.replace(/\.pdf$/i, `_translated_${targetLang.toLowerCase()}.pdf`);
-      setResult({ blob, name });
+      setTranslated(result);
     } catch (err: any) {
       setError(err.message || 'Translation failed');
     } finally {
@@ -60,10 +59,11 @@ export default function TranslatePdfPage() {
     }
   }, [files, targetLang]);
 
-  const handleDownload = useCallback(() => {
-    if (!result) return;
-    downloadBlob(result.blob, result.name);
-  }, [result]);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(translated);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <div className="min-h-screen bg-gray-50/50">
@@ -77,7 +77,7 @@ export default function TranslatePdfPage() {
             <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-sky-50"><Languages className="w-6 h-6 text-sky-500" /></div>
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Translate PDF</h1>
-              <p className="text-muted-foreground text-sm sm:text-base">Translate your PDF into any language and download as a new PDF</p>
+              <p className="text-muted-foreground text-sm sm:text-base">Extract text from your PDF and translate it to any language</p>
             </div>
           </div>
         </div>
@@ -87,11 +87,11 @@ export default function TranslatePdfPage() {
             accept=".pdf"
             multiple={false}
             files={files}
-            onFilesSelected={(f) => { setFiles(f); setResult(null); setError(null); }}
-            onRemoveFile={() => { setFiles([]); setResult(null); }}
+            onFilesSelected={(f) => { setFiles(f); setTranslated(''); setError(null); setCopied(false); }}
+            onRemoveFile={() => { setFiles([]); setTranslated(''); }}
           />
 
-          {files.length > 0 && !result && (
+          {files.length > 0 && !translated && (
             <div className="mt-6 space-y-5">
               <div className="p-4 bg-gray-50 rounded-xl border border-border space-y-2">
                 <div className="flex items-center justify-between">
@@ -104,7 +104,6 @@ export default function TranslatePdfPage() {
                 </div>
               </div>
 
-              {/* Language selector */}
               <div>
                 <label className="block text-sm font-semibold text-foreground mb-2">Translate to</label>
                 <div className="relative max-w-sm">
@@ -149,37 +148,24 @@ export default function TranslatePdfPage() {
             </div>
           )}
 
-          {result && (
+          {translated && (
             <div className="mt-6 space-y-4 animate-fade-in">
-              <div className="p-5 bg-green-50 border border-green-200 rounded-xl flex items-start gap-3">
-                <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-green-800">Translation complete</p>
-                  <p className="text-sm text-green-700">Translated to {targetLang} and created as a new PDF.</p>
-                </div>
-              </div>
-
-              <div className="p-5 bg-gray-50 rounded-xl border border-border">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Output file</span>
-                  <span className="text-sm font-medium text-foreground">{result.name}</span>
-                </div>
-                <div className="flex items-center justify-between mt-2">
-                  <span className="text-sm text-muted-foreground">File size</span>
-                  <span className="text-lg font-bold text-foreground">{formatBytes(result.blob.size)}</span>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <button onClick={handleDownload}
-                  className="px-6 py-3 rounded-xl font-semibold text-sm bg-primary hover:bg-primary-hover text-white transition-all flex items-center gap-2">
-                  <FileDown className="w-4 h-4" /> Download Translated PDF
-                </button>
-                <button onClick={() => { setResult(null); }}
-                  className="px-6 py-3 rounded-xl text-sm font-medium border border-border hover:bg-gray-50 transition-colors">
-                  Translate Another
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-foreground">Translated to {targetLang}</h3>
+                <button onClick={handleCopy}
+                  className="px-4 py-2 rounded-xl text-sm font-medium border border-border hover:bg-gray-50 transition-colors flex items-center gap-2">
+                  {copied ? <><Check className="w-4 h-4 text-green-500" /> Copied</> : <><Copy className="w-4 h-4" /> Copy</>}
                 </button>
               </div>
+
+              <div className="p-6 bg-gray-50 rounded-xl border border-border max-h-[32rem] overflow-y-auto">
+                <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{translated}</p>
+              </div>
+
+              <button onClick={() => { setTranslated(''); setCopied(false); }}
+                className="px-5 py-2.5 rounded-xl text-sm font-medium border border-border hover:bg-gray-50 transition-colors">
+                Translate Another
+              </button>
             </div>
           )}
         </div>
