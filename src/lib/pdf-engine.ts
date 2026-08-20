@@ -174,10 +174,20 @@ export async function isPdfPasswordProtected(file: File): Promise<boolean> {
   }
 }
 
-export async function protectPdf(file: File, password: string): Promise<Blob> {
+export async function protectPdf(file: File, userPassword: string, ownerPassword?: string, permissions?: { allowPrinting?: boolean; allowModifying?: boolean; allowCopying?: boolean; allowFillingForms?: boolean }): Promise<Blob> {
+  const { encryptPDF } = await import('@pdfsmaller/pdf-encrypt-lite');
   const buf = await readFileAsArrayBuffer(file);
-  const src = await loadPdf(buf);
-  return toBlob(await src.save());
+  const pdfBytes = new Uint8Array(buf);
+  const options: any = {};
+  if (ownerPassword) options.ownerPassword = ownerPassword;
+  if (permissions) {
+    if (permissions.allowPrinting !== undefined) options.allowPrinting = permissions.allowPrinting;
+    if (permissions.allowModifying !== undefined) options.allowModifying = permissions.allowModifying;
+    if (permissions.allowCopying !== undefined) options.allowCopying = permissions.allowCopying;
+    if (permissions.allowFillingForms !== undefined) options.allowFillingForms = permissions.allowFillingForms;
+  }
+  const encrypted = await encryptPDF(pdfBytes, userPassword, Object.keys(options).length > 0 ? options : undefined);
+  return new Blob([new Uint8Array(encrypted)], { type: 'application/pdf' });
 }
 
 export async function jpgToPdf(files: File[]): Promise<Blob> {
