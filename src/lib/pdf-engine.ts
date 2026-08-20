@@ -675,32 +675,48 @@ export async function createPdfFromText(text: string, title?: string): Promise<B
 async function translateChunk(text: string, from: string, to: string): Promise<string> {
   const fromLang = from === 'autodetect' ? 'auto' : from;
 
-  // Lingva Translate (free, open-source, all languages, no limits)
-  const lingvaLangs: Record<string, string> = {
-    en: 'en', es: 'es', fr: 'fr', de: 'de', it: 'it', pt: 'pt', ru: 'ru',
-    zh: 'zh', ja: 'ja', ko: 'ko', ar: 'ar', hi: 'hi', nl: 'nl',
-    sv: 'sv', pl: 'pl', tr: 'tr', vi: 'vi', th: 'th', id: 'id',
-    bn: 'en', bg: 'bg', cs: 'cs', da: 'da', fi: 'fi', el: 'el',
-    he: 'he', hu: 'hu', is: 'is', lv: 'lv', lt: 'lt', no: 'no',
-    fa: 'fa', ro: 'ro', sr: 'sr', sk: 'sk', sl: 'sl', hr: 'hr',
-    uk: 'uk', tl: 'tl', ta: 'ta', ur: 'ur',
-  };
+  // 1. Try Lingva Translate (free, unlimited, all languages)
+  const lingvaInstances = [
+    'https://lingva.ml',
+    'https://lingva.thedaviddelta.com',
+    'https://lingva.lunar.icu',
+  ];
+  for (const base of lingvaInstances) {
+    try {
+      const url = `${base}/api/v1/${fromLang}/${to}/${encodeURIComponent(text)}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.translation) return data.translation;
+      }
+    } catch { /* try next */ }
+  }
 
-  const lingvaFrom = lingvaLangs[fromLang] || 'auto';
-  const lingvaTo = lingvaLangs[to] || 'en';
+  // 2. Try LibreTranslate public instances (free, open-source)
+  const libreInstances = [
+    'https://libretranslate.com',
+    'https://translate.fortytwo-it.com',
+    'https://lt.vern.cc',
+  ];
+  for (const base of libreInstances) {
+    try {
+      const url = `${base}/translate`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ q: text, source: fromLang === 'auto' ? 'auto' : fromLang, target: to, format: 'text' }),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.translatedText) return data.translatedText;
+      }
+    } catch { /* try next */ }
+  }
 
-  try {
-    const url = `https://lingva.ml/api/v1/${lingvaFrom}/${lingvaTo}/${encodeURIComponent(text)}`;
-    const res = await fetch(url);
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.translation) return data.translation;
-    }
-  } catch { /* fall through */ }
-
-  // MyMemory fallback
+  // 3. MyMemory fallback with safe chunking
   const langpair = `${from}|${to}`;
-  const memUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langpair}`;
+  const memUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text.slice(0, 450))}&langpair=${langpair}`;
   const res = await fetch(memUrl);
   if (!res.ok) throw new Error(`Translation API error: ${res.status}`);
   const data = await res.json();
@@ -713,7 +729,7 @@ async function translateChunk(text: string, from: string, to: string): Promise<s
 export async function translateText(text: string, fromLang: string, toLang: string, onProgress?: (current: number, total: number) => void): Promise<string> {
   const from = fromLang === 'Auto' ? 'autodetect' : (LANG_CODES[fromLang] || fromLang);
   const to = LANG_CODES[toLang] || toLang;
-  const chunkSize = 1500;
+  const chunkSize = 450;
   const sentences = text.replace(/\n+/g, ' ').split(/(?<=[.!?])\s+/);
   const chunks: string[] = [];
   let current = '';
