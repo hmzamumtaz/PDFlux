@@ -12,27 +12,18 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1048576).toFixed(2)} MB`;
 }
 
-function parseTargetSize(input: string): number | null {
-  const trimmed = input.trim().toUpperCase();
-  const mbMatch = trimmed.match(/^([\d.]+)\s*MB$/);
-  if (mbMatch) return parseFloat(mbMatch[1]) * 1048576;
-  const kbMatch = trimmed.match(/^([\d.]+)\s*KB$/);
-  if (kbMatch) return parseFloat(kbMatch[1]) * 1024;
-  const numMatch = trimmed.match(/^([\d.]+)$/);
-  if (numMatch) return parseFloat(numMatch[1]) * 1048576;
-  return null;
-}
 
 export default function CompressPdfPage() {
   const [files, setFiles] = useState<File[]>([]);
-  const [targetInput, setTargetInput] = useState('');
+  const [targetValue, setTargetValue] = useState('');
+  const [targetUnit, setTargetUnit] = useState<'MB' | 'KB'>('MB');
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState('');
   const [result, setResult] = useState<CompressResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const originalSize = files[0]?.size || 0;
-  const targetBytes = parseTargetSize(targetInput);
+  const targetBytes = targetValue ? parseFloat(targetValue) * (targetUnit === 'MB' ? 1048576 : 1024) : null;
   const targetValid = targetBytes !== null && targetBytes > 0;
   const noCompressionNeeded = targetValid && targetBytes >= originalSize;
   const isPossible = targetValid && targetBytes > 50000;
@@ -85,8 +76,8 @@ export default function CompressPdfPage() {
             accept=".pdf"
             multiple={false}
             files={files}
-            onFilesSelected={(f) => { setFiles(f); setResult(null); setError(null); setTargetInput(''); setProgress(''); }}
-            onRemoveFile={() => { setFiles([]); setResult(null); setTargetInput(''); setProgress(''); }}
+            onFilesSelected={(f) => { setFiles(f); setResult(null); setError(null); setTargetValue(''); setProgress(''); }}
+            onRemoveFile={() => { setFiles([]); setResult(null); setTargetValue(''); setProgress(''); }}
           />
 
           {files.length > 0 && !result && (
@@ -102,16 +93,23 @@ export default function CompressPdfPage() {
               {/* Target size input */}
               <div>
                 <label className="block text-sm font-semibold text-foreground mb-2">Target file size</label>
-                <div className="flex gap-3">
+                <div className="flex gap-2">
                   <input
-                    type="text"
-                    value={targetInput}
-                    onChange={(e) => { setTargetInput(e.target.value); setResult(null); setError(null); }}
-                    placeholder="e.g. 3.2 MB or 500 KB"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={targetValue}
+                    onChange={(e) => { setTargetValue(e.target.value); setResult(null); setError(null); }}
+                    placeholder="0.0"
                     className="flex-1 px-4 py-3 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary font-mono"
                   />
+                  <div className="flex rounded-xl border border-border overflow-hidden">
+                    <button onClick={() => { setTargetUnit('MB'); setResult(null); setError(null); }}
+                      className={`px-4 py-3 text-sm font-medium transition-colors ${targetUnit === 'MB' ? 'bg-primary text-white' : 'bg-white text-muted-foreground hover:bg-gray-50'}`}>MB</button>
+                    <button onClick={() => { setTargetUnit('KB'); setResult(null); setError(null); }}
+                      className={`px-4 py-3 text-sm font-medium transition-colors border-l border-border ${targetUnit === 'KB' ? 'bg-primary text-white' : 'bg-white text-muted-foreground hover:bg-gray-50'}`}>KB</button>
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1.5">Enter size in MB or KB (e.g. 3.2 MB, 500 KB)</p>
               </div>
 
               {/* Auto presets */}
@@ -120,11 +118,14 @@ export default function CompressPdfPage() {
                 <div className="flex flex-wrap gap-2">
                   {[50, 25, 10, 5].map(pct => {
                     const presetBytes = Math.round(originalSize * pct / 100);
-                    const presetLabel = presetBytes >= 1048576 ? `${(presetBytes / 1048576).toFixed(1)} MB` : `${(presetBytes / 1024).toFixed(0)} KB`;
+                    const useMB = presetBytes >= 1048576;
+                    const presetNum = useMB ? (presetBytes / 1048576).toFixed(1) : (presetBytes / 1024).toFixed(0);
+                    const presetUnit = useMB ? 'MB' : 'KB';
+                    const isActive = targetValue === presetNum && targetUnit === presetUnit;
                     return (
-                      <button key={pct} onClick={() => { setTargetInput(presetLabel); setResult(null); setError(null); }}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${targetInput === presetLabel ? 'border-primary bg-primary/5 text-primary' : 'border-border hover:bg-gray-50 text-muted-foreground hover:text-foreground'}`}>
-                        {pct}% ({presetLabel})
+                      <button key={pct} onClick={() => { setTargetValue(presetNum); setTargetUnit(presetUnit as 'MB' | 'KB'); setResult(null); setError(null); }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${isActive ? 'border-primary bg-primary/5 text-primary' : 'border-border hover:bg-gray-50 text-muted-foreground hover:text-foreground'}`}>
+                        {pct}% ({presetNum} {presetUnit})
                       </button>
                     );
                   })}
@@ -199,7 +200,7 @@ export default function CompressPdfPage() {
               {targetValid && !noCompressionNeeded && !notPossible && (
                 <button onClick={handleCompress} disabled={processing}
                   className="px-8 py-3.5 rounded-xl font-semibold text-sm transition-all flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white hover:shadow-lg hover:shadow-emerald-500/25 active:scale-[0.98] disabled:opacity-50">
-                  {processing ? <><Loader2 className="w-4 h-4 animate-spin" /> Compressing...</> : <><TrendingDown className="w-4 h-4" /> Compress to {targetInput}</>}
+                  {processing ? <><Loader2 className="w-4 h-4 animate-spin" /> Compressing...</> : <><TrendingDown className="w-4 h-4" /> Compress to {formatBytes(targetBytes!)}</>}
                 </button>
               )}
             </div>
@@ -256,7 +257,7 @@ export default function CompressPdfPage() {
                 <button onClick={handleDownload} className="px-6 py-3 rounded-xl font-semibold text-sm bg-primary hover:bg-primary-hover text-white transition-all flex items-center gap-2">
                   <FileDown className="w-4 h-4" /> Download Compressed PDF
                 </button>
-                <button onClick={() => { setResult(null); setTargetInput(''); }} className="px-6 py-3 rounded-xl text-sm font-medium border border-border hover:bg-gray-50 transition-colors">
+                <button onClick={() => { setResult(null); setTargetValue(''); }} className="px-6 py-3 rounded-xl text-sm font-medium border border-border hover:bg-gray-50 transition-colors">
                   Compress Again
                 </button>
               </div>
