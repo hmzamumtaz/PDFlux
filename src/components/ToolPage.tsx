@@ -18,6 +18,8 @@ interface ToolPageProps {
   processLabel?: string;
   processAllTogether?: boolean;
   onFilesSelected?: (files: File[]) => void;
+  minFiles?: number;
+  minFilesMessage?: string;
 }
 
 interface ProcessedResult {
@@ -224,6 +226,8 @@ export default function ToolPage({
   processLabel = 'Process PDF',
   processAllTogether = false,
   onFilesSelected,
+  minFiles,
+  minFilesMessage,
 }: ToolPageProps) {
   const tool = getToolBySlug(slug);
   const [files, setFiles] = useState<File[]>([]);
@@ -240,6 +244,7 @@ export default function ToolPage({
 
   const allSelected = files.length > 0 && selected.size === files.length;
   const someSelected = selected.size > 0 && !allSelected;
+  const minFilesMet = !minFiles || files.length >= minFiles;
 
   const handleFilesSelected = useCallback((newFiles: File[]) => {
     setFiles(prev => [...prev, ...newFiles]);
@@ -416,7 +421,11 @@ export default function ToolPage({
                     </div>
                   )}
 
-                  {results.length > 0 && !processing ? (
+                  {!minFilesMet ? (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-center">
+                      <p className="text-sm text-amber-700 font-medium">{minFilesMessage || `Upload at least ${minFiles} files.`}</p>
+                    </div>
+                  ) : results.length > 0 && !processing ? (
                     <div>
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Check className="w-4 h-4 text-green-500" />{results.length} ready</h3>
@@ -435,7 +444,7 @@ export default function ToolPage({
                       </div>
                     </div>
                   ) : (
-                    <button onClick={handleProcess} disabled={selected.size === 0 || processing} className={`w-full px-6 py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${selected.size > 0 && !processing ? 'bg-primary hover:bg-primary-hover text-white hover:shadow-lg hover:shadow-primary/25 active:scale-[0.98]' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
+                    <button onClick={handleProcess} disabled={selected.size === 0 || processing || !minFilesMet} className={`w-full px-6 py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${selected.size > 0 && !processing && minFilesMet ? 'bg-primary hover:bg-primary-hover text-white hover:shadow-lg hover:shadow-primary/25 active:scale-[0.98]' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
                       {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                       {processLabel} {selected.size > 0 && `(${selected.size})`}
                     </button>
