@@ -109,7 +109,7 @@ export default function FileUpload({
       ) : (
         <div className="space-y-3">
           {/* Select All Bar */}
-          {selectable && (
+          {selectable && files.length > 1 && (
             <div className="flex items-center justify-between">
               <button
                 onClick={onToggleAll}
@@ -128,14 +128,14 @@ export default function FileUpload({
           {files.map((file, index) => (
             <div
               key={`${file.name}-${index}`}
-              onClick={selectable && onToggleFile ? () => onToggleFile(index) : undefined}
+              onClick={selectable && files.length > 1 && onToggleFile ? () => onToggleFile(index) : undefined}
               className={`flex items-center gap-3 p-4 border rounded-xl transition-all animate-fade-in ${
-                selectable
+                selectable && files.length > 1
                   ? `cursor-pointer ${selected?.has(index) ? 'border-primary bg-primary/5' : 'border-border bg-white hover:bg-gray-50'}`
                   : 'border-border bg-white hover:bg-gray-50'
               }`}
             >
-              {selectable && (
+              {selectable && files.length > 1 && (
                 <div className="shrink-0">
                   {selected?.has(index) ? <CheckSquare className="w-5 h-5 text-primary" /> : <Square className="w-5 h-5 text-muted-foreground" />}
                 </div>

@@ -247,7 +247,13 @@ export default function ToolPage({
   const minFilesMet = !minFiles || files.length >= minFiles;
 
   const handleFilesSelected = useCallback((newFiles: File[]) => {
-    setFiles(prev => [...prev, ...newFiles]);
+    setFiles(prev => {
+      const updated = [...prev, ...newFiles];
+      if (!multiple || updated.length === 1) {
+        setSelected(new Set(updated.map((_, i) => i)));
+      }
+      return updated;
+    });
     setResults([]);
     setError(null);
     setLeftGridIdx(0);
