@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { ArrowLeft, Loader2, Lock, AlertCircle, Check, Download, Trash2, FileDown, List, LayoutGrid, ChevronLeft, ChevronRight, Eye, EyeOff, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Loader2, Lock, AlertCircle, Check, Download, Trash2, FileDown, List, LayoutGrid, ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
 import { protectPdf, downloadBlob, renderPdfPages } from '@/lib/pdf-engine';
@@ -242,14 +242,7 @@ export default function ProtectPdfPage() {
                   {files.map((f, i) => (
                     <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-border bg-gray-50/50">
                       <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0"><Lock className="w-4 h-4 text-amber-500" /></div>
-                      <p className="text-sm text-foreground truncate flex-1">{f.name}</p>
-                      {!individualMode ? (
-                        <span className="text-xs text-muted-foreground bg-gray-100 px-2 py-0.5 rounded">Same password</span>
-                      ) : filePasswords[i]?.password ? (
-                        <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded flex items-center gap-1"><Check className="w-3 h-3" /> Set</span>
-                      ) : (
-                        <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded">Needs password</span>
-                      )}
+                      <p className="text-sm text-foreground truncate">{f.name}</p>
                     </div>
                   ))}
                 </div>
@@ -259,7 +252,7 @@ export default function ProtectPdfPage() {
             </div>
 
             {/* Right: Password + Permissions + Actions */}
-            <div className="w-full lg:w-96 shrink-0">
+            <div className="w-full lg:flex-1 shrink-0">
               <div className="lg:sticky lg:top-8 space-y-4">
                 <div className="bg-white rounded-2xl border border-border p-6 shadow-sm space-y-5">
                   {/* Password section */}
@@ -267,9 +260,13 @@ export default function ProtectPdfPage() {
                     <div className="flex items-center justify-between mb-3">
                       <label className="text-sm font-semibold text-foreground">Password</label>
                       {files.length > 1 && (
-                        <button onClick={() => setIndividualMode(!individualMode)} className="text-xs text-primary hover:text-primary-hover transition-colors flex items-center gap-1">
-                          {individualMode ? <><ChevronUp className="w-3 h-3" /> Use one password</> : <><ChevronDown className="w-3 h-3" /> Set per file</>}
-                        </button>
+                        <div className="flex items-center gap-2.5">
+                          <span className={`text-xs transition-colors ${!individualMode ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>One for all</span>
+                          <button onClick={() => setIndividualMode(!individualMode)} className={`relative w-9 h-5 rounded-full transition-colors ${individualMode ? 'bg-primary' : 'bg-gray-300'}`}>
+                            <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${individualMode ? 'translate-x-4' : ''}`} />
+                          </button>
+                          <span className={`text-xs transition-colors ${individualMode ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>Per file</span>
+                        </div>
                       )}
                     </div>
 
