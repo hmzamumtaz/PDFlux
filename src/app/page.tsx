@@ -18,9 +18,6 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-3xl mx-auto">
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 border border-border rounded-full text-sm font-medium text-foreground mb-8">
-              <Lock className="w-3.5 h-3.5 text-green-500" />
-              100% Private &amp; Secure
-              <span className="text-muted-foreground">|</span>
               <span>{tools.length}+ Tools</span>
             </div>
 

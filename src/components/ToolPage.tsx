@@ -455,10 +455,6 @@ export default function ToolPage({
           </div>
         )}
 
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-6 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 bg-green-500 rounded-full"></span>100% Private</span>
-          <span>No files uploaded to any server</span>
-        </div>
       </div>
     </div>
   );

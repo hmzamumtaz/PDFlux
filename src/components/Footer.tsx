@@ -56,10 +56,6 @@ export default function Footer() {
             &copy; {new Date().getFullYear()} PDFlux. All files are processed locally in your browser. Nothing is uploaded.
           </p>
           <div className="flex items-center gap-4 text-xs">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-              100% Private
-            </span>
             <span>No file size limits</span>
           </div>
         </div>
