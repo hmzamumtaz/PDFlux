@@ -178,15 +178,23 @@ export async function protectPdf(file: File, userPassword: string, ownerPassword
   const { encryptPDF } = await import('@pdfsmaller/pdf-encrypt-lite');
   const buf = await readFileAsArrayBuffer(file);
   const pdfBytes = new Uint8Array(buf);
-  const options: any = {};
-  if (ownerPassword) options.ownerPassword = ownerPassword;
+  const autoOwner = ownerPassword || userPassword + '_owner';
+  const options: any = {
+    ownerPassword: autoOwner,
+  };
   if (permissions) {
     if (permissions.allowPrinting !== undefined) options.allowPrinting = permissions.allowPrinting;
-    if (permissions.allowModifying !== undefined) options.allowModifying = permissions.allowModifying;
-    if (permissions.allowCopying !== undefined) options.allowCopying = permissions.allowCopying;
+    if (permissions.allowModifying !== undefined) {
+      options.allowModifying = permissions.allowModifying;
+      options.allowAnnotating = permissions.allowModifying;
+    }
+    if (permissions.allowCopying !== undefined) {
+      options.allowCopying = permissions.allowCopying;
+      options.allowExtraction = permissions.allowCopying;
+    }
     if (permissions.allowFillingForms !== undefined) options.allowFillingForms = permissions.allowFillingForms;
   }
-  const encrypted = await encryptPDF(pdfBytes, userPassword, Object.keys(options).length > 0 ? options : undefined);
+  const encrypted = await encryptPDF(pdfBytes, userPassword, options);
   return new Blob([new Uint8Array(encrypted)], { type: 'application/pdf' });
 }
 
