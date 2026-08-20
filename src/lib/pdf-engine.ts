@@ -627,7 +627,7 @@ async function translateChunk(text: string, from: string, to: string): Promise<s
 export async function translateText(text: string, fromLang: string, toLang: string, onProgress?: (current: number, total: number) => void): Promise<string> {
   const from = fromLang === 'Auto' ? 'autodetect' : (LANG_CODES[fromLang] || fromLang);
   const to = LANG_CODES[toLang] || toLang;
-  const chunkSize = 4500;
+  const chunkSize = 1500;
   const sentences = text.replace(/\n+/g, ' ').split(/(?<=[.!?])\s+/);
   const chunks: string[] = [];
   let current = '';
