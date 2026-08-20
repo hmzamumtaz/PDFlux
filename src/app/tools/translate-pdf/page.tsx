@@ -26,12 +26,9 @@ export default function TranslatePdfPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [processing, setProcessing] = useState(false);
   const [targetLang, setTargetLang] = useState('Spanish');
-  const [langSearch, setLangSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ current: number; total: number; msg: string } | null>(null);
   const [result, setResult] = useState<{ blob: Blob; name: string } | null>(null);
-
-  const filteredLangs = LANGUAGES.filter(l => l.toLowerCase().includes(langSearch.toLowerCase()));
 
   const handleTranslate = useCallback(async () => {
     if (files.length === 0) return;
@@ -110,26 +107,10 @@ export default function TranslatePdfPage() {
               {/* Language selector */}
               <div>
                 <label className="block text-sm font-semibold text-foreground mb-2">Translate to</label>
-                <div className="relative max-w-sm">
-                  <input type="text" value={langSearch || targetLang} onChange={(e) => { setLangSearch(e.target.value); }}
-                    onFocus={() => setLangSearch('')}
-                    placeholder="Search languages..."
-                    className="w-full px-4 py-3 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white" />
-                  {langSearch && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border border-border rounded-xl shadow-lg max-h-60 overflow-y-auto">
-                      {filteredLangs.length === 0 ? (
-                        <div className="px-4 py-3 text-sm text-muted-foreground">No languages found</div>
-                      ) : (
-                        filteredLangs.map(lang => (
-                          <button key={lang} onClick={() => { setTargetLang(lang); setLangSearch(''); }}
-                            className={`w-full px-4 py-2.5 text-left text-sm transition-colors ${lang === targetLang ? 'bg-primary/5 text-primary' : 'hover:bg-gray-50'}`}>
-                            {lang}
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
+                <select value={targetLang} onChange={(e) => setTargetLang(e.target.value)}
+                  className="w-full max-w-sm px-4 py-3 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white">
+                  {LANGUAGES.map(lang => <option key={lang} value={lang}>{lang}</option>)}
+                </select>
               </div>
 
               {error && (
