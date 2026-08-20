@@ -513,6 +513,92 @@ export async function pdfToMarkdown(file: File): Promise<string> {
   return pages.map((text, i) => `## Page ${i + 1}\n\n${text}\n\n---\n\n`).join('');
 }
 
+export interface SummaryOptions {
+  wordCount: number;
+}
+
+function tokenize(text: string): string[] {
+  return text.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+}
+
+function sentenceScores(sentences: string[], allWords: string[]): number[] {
+  const tf: Record<string, number> = {};
+  for (const w of allWords) tf[w] = (tf[w] || 0) + 1;
+  const maxTf = Math.max(...Object.values(tf), 1);
+
+  const stopwords = new Set(['the','and','for','are','but','not','you','all','can','had','her','was','one','our','out','has','his','how','its','may','new','now','old','see','way','who','did','get','let','say','she','too','use','him','his','with','that','this','will','each','make','like','long','look','many','most','over','such','take','than','them','then','these','from','have','been','said','more','when','what','your','were','they','been','would','could','should','there','their','about','which','when','where','into','also','after','first','only','other','some','than','very','just','into','more','most','some','time','very','when','come','made','could','many','such','take','than','them','than','that','this','with','have','from','been','would','will','back','were','all','can','had','her','one','our','out','day','get','has','him','his','how','its','may','new','now','old','see','way','who','boy','did','get','let','say','she','too','use']);
+
+  const totalSentences = sentences.length;
+  return sentences.map((sent, i) => {
+    const words = tokenize(sent);
+    if (words.length === 0) return 0;
+
+    let score = 0;
+    for (const w of words) {
+      if (!stopwords.has(w)) {
+        score += (tf[w] || 0) / maxTf;
+      }
+    }
+    score /= Math.max(words.length, 1);
+
+    // Position bonus: first and last sentences are usually important
+    if (i === 0) score *= 1.5;
+    else if (i === 1) score *= 1.3;
+    else if (i === totalSentences - 1) score *= 1.4;
+    else if (i === totalSentences - 2) score *= 1.2;
+
+    // Length penalty: very short sentences are less informative
+    if (words.length < 5) score *= 0.5;
+
+    return score;
+  });
+}
+
+export async function summarizePdf(file: File, options: SummaryOptions, onProgress?: (msg: string) => void): Promise<{ summary: string; wordCount: number; originalWordCount: number }> {
+  onProgress?.('Extracting text...');
+  const pages = await extractTextFromPdf(file);
+  const fullText = pages.join('\n\n');
+
+  if (!fullText.trim()) {
+    return { summary: 'No extractable text found. The document may be scanned/image-based.', wordCount: 0, originalWordCount: 0 };
+  }
+
+  onProgress?.('Analyzing content...');
+  const sentences = fullText.replace(/\n+/g, ' ').split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 15);
+  const allWords = tokenize(fullText);
+  const originalWordCount = allWords.length;
+
+  if (sentences.length <= 3) {
+    return { summary: sentences.join(' '), wordCount: allWords.length, originalWordCount };
+  }
+
+  onProgress?.('Scoring sentences...');
+  const scores = sentenceScores(sentences, allWords);
+
+  // Select top sentences up to target word count
+  const indexed = scores.map((score, i) => ({ score, i })).sort((a, b) => b.score - a.score);
+
+  const selected: { i: number; score: number }[] = [];
+  let wordBudget = options.wordCount;
+
+  for (const item of indexed) {
+    const sentWords = tokenize(sentences[item.i]).length;
+    if (sentWords <= wordBudget) {
+      selected.push(item);
+      wordBudget -= sentWords;
+    }
+    if (wordBudget <= 0) break;
+  }
+
+  // Sort by original document order for coherence
+  selected.sort((a, b) => a.i - b.i);
+
+  const summary = selected.map(s => sentences[s.i]).join(' ');
+  const wordCount = tokenize(summary).length;
+
+  return { summary, wordCount, originalWordCount };
+}
+
 const LANG_CODES: Record<string, string> = {
   'English': 'en', 'Spanish': 'es', 'French': 'fr', 'German': 'de', 'Italian': 'it',
   'Portuguese': 'pt', 'Russian': 'ru', 'Chinese (Simplified)': 'zh-CN', 'Chinese (Traditional)': 'zh-TW',
