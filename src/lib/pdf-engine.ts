@@ -571,17 +571,16 @@ export async function jpgToPdf(files: File[]): Promise<Blob> {
     const buf = await readFileAsArrayBuffer(file);
     let image;
     try {
-      if (file.type === 'image/png') {
-        image = await merged.embedPng(buf);
-      } else if (file.type === 'image/jpeg' || file.type === 'image/jpg') {
+      if (file.type === 'image/jpeg' || file.type === 'image/jpg') {
         image = await merged.embedJpg(buf);
       } else {
-        // WebP/GIF/BMP/etc. — pdf-lib only embeds PNG and JPEG, so transcode
-        // via the browser decoder (which also applies EXIF orientation).
+        // Everything else (PNG, WebP, GIF, BMP…) goes through the browser
+        // decoder first: it applies EXIF orientation and, crucially, rejects
+        // malformed files cleanly — pdf-lib's PNG decoder can hang on them.
         image = await merged.embedPng(await transcodeImageToPng(file));
       }
     } catch {
-      throw new Error(`"${file.name}" could not be read as an image.`);
+      throw new Error(`"${file.name}" could not be read as an image. It may be corrupted or in an unsupported format.`);
     }
     const page = merged.addPage([image.width, image.height]);
     page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
@@ -1453,6 +1452,50 @@ export async function renderPdfPages(file: File, pageNumbers: number[]): Promise
     results.push({ page: pageNum, url, width: viewport.width, height: viewport.height });
   }
   return results;
+}
+
+export interface PagePreview {
+  page: number;
+  url: string;
+  /** Page size in PDF points — needed to map screen coordinates back to the document. */
+  pointWidth: number;
+  pointHeight: number;
+}
+
+/**
+ * Render every page (or a subset) as an image plus its true size in points, so
+ * a UI can overlay interactive elements and translate them back to PDF space.
+ */
+export async function renderPdfPreviews(
+  file: File,
+  options?: { scale?: number; maxPages?: number },
+  onProgress?: (page: number, total: number) => void,
+): Promise<PagePreview[]> {
+  const pdfjsLib = await getPdfJs();
+  const buf = await readFileAsArrayBuffer(file);
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+  const total = Math.min(pdf.numPages, options?.maxPages ?? 300);
+  const out: PagePreview[] = [];
+
+  for (let i = 1; i <= total; i++) {
+    onProgress?.(i, total);
+    const page = await pdf.getPage(i);
+    const baseVp = page.getViewport({ scale: 1 });
+    const scale = safeScale(baseVp.width, baseVp.height, options?.scale ?? 2, 3000);
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    const ctx = canvas.getContext('2d')!;
+    await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+    out.push({
+      page: i,
+      url: canvas.toDataURL('image/jpeg', 0.85),
+      pointWidth: baseVp.width,
+      pointHeight: baseVp.height,
+    });
+  }
+  return out;
 }
 
 export interface FooterWhitespaceResult {
