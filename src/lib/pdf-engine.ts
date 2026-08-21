@@ -930,11 +930,13 @@ export async function htmlToPdf(html: string): Promise<Blob> {
 export async function htmlToPdfVisual(
   html: string,
   onProgress?: (msg: string) => void,
+  options?: { orientation?: 'portrait' | 'landscape' },
 ): Promise<Blob> {
   const html2canvas = (await import('html2canvas')).default;
 
-  const A4_W = 595.28;
-  const A4_H = 841.89;
+  const isLandscape = options?.orientation === 'landscape';
+  const A4_W = isLandscape ? 841.89 : 595.28;
+  const A4_H = isLandscape ? 595.28 : 841.89;
   const MARGIN = 24; // slim print margin in points
   const printableW = A4_W - MARGIN * 2;
   const printableH = A4_H - MARGIN * 2;
@@ -954,6 +956,15 @@ export async function htmlToPdfVisual(
     : `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#fff;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;line-height:1.5;color:#111">${html}</body></html>`;
 
   document.body.appendChild(iframe);
+
+  // html2canvas measures font baselines in THIS document using a 1x1 inline
+  // <img>. Tailwind's preflight sets img{display:block}, which corrupts that
+  // measurement and shifts every drawn glyph downward — restore the default
+  // for the measurement image only, for the duration of the capture.
+  const metricsFix = document.createElement('style');
+  metricsFix.textContent = 'img[width="1"][height="1"]{display:inline !important;}';
+  document.head.appendChild(metricsFix);
+
   try {
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Timed out rendering the HTML.')), 20000);
@@ -1021,6 +1032,7 @@ export async function htmlToPdfVisual(
     return toBlob(await pdf.save());
   } finally {
     iframe.remove();
+    metricsFix.remove();
   }
 }
 

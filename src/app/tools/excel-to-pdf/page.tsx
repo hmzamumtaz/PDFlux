@@ -1,6 +1,237 @@
 'use client';
 
 import ToolPage from '@/components/ToolPage';
+import { htmlToPdfVisual } from '@/lib/pdf-engine';
+import type { Cell, Worksheet } from 'exceljs';
+
+const MAX_ROWS_PER_SHEET = 3000;
+const MAX_COLS_PER_SHEET = 64;
+// Printable widths in CSS px inside htmlToPdfVisual (A4 minus margins @96dpi, minus body padding)
+const PORTRAIT_PX = 698;
+const LANDSCAPE_PX = 1027;
+
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function argbToCss(color: any): string | null {
+  const argb = color?.argb;
+  if (typeof argb === 'string' && /^[0-9A-Fa-f]{8}$/.test(argb)) return '#' + argb.slice(2);
+  if (typeof argb === 'string' && /^[0-9A-Fa-f]{6}$/.test(argb)) return '#' + argb;
+  return null; // theme/indexed colors fall back to defaults
+}
+
+const BORDER_CSS: Record<string, string> = {
+  thin: '1px solid', hair: '1px solid', dotted: '1px dotted', dashed: '1px dashed',
+  dashDot: '1px dashed', dashDotDot: '1px dotted', medium: '2px solid',
+  mediumDashed: '2px dashed', mediumDashDot: '2px dashed', mediumDashDotDot: '2px dotted',
+  thick: '3px solid', double: '3px double', slantDashDot: '2px dashed',
+};
+
+function borderSide(side: any): string | null {
+  if (!side?.style) return null;
+  const css = BORDER_CSS[side.style] || '1px solid';
+  return `${css} ${argbToCss(side.color) || '#000'}`;
+}
+
+// Apply the essentials of the cell's number format so values read like Excel shows them.
+function formatCellValue(cell: Cell): string {
+  const v: any = (cell.value as any)?.result !== undefined ? (cell.value as any).result : cell.value;
+  if (v === null || v === undefined) return '';
+  const numFmt = cell.numFmt || '';
+
+  if (v instanceof Date) {
+    const hasTime = /[hHsS]|AM\/PM/.test(numFmt) || (v.getUTCHours() + v.getUTCMinutes() + v.getUTCSeconds() > 0);
+    const d = `${String(v.getUTCDate()).padStart(2, '0')}/${String(v.getUTCMonth() + 1).padStart(2, '0')}/${v.getUTCFullYear()}`;
+    if (!hasTime) return d;
+    return `${d} ${String(v.getUTCHours()).padStart(2, '0')}:${String(v.getUTCMinutes()).padStart(2, '0')}`;
+  }
+
+  if (typeof v === 'number') {
+    if (numFmt.includes('%')) {
+      const decMatch = numFmt.match(/0\.(0+)%/);
+      return (v * 100).toFixed(decMatch ? decMatch[1].length : 0) + '%';
+    }
+    const decMatch = numFmt.match(/0\.(0+)/);
+    const decimals = decMatch ? decMatch[1].length : (Number.isInteger(v) ? 0 : undefined);
+    const useThousands = numFmt.includes(',');
+    let out: string;
+    if (decimals !== undefined) {
+      out = useThousands
+        ? v.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+        : v.toFixed(decimals);
+    } else {
+      out = useThousands ? v.toLocaleString('en-US') : String(v);
+    }
+    const cur = numFmt.match(/[$€£¥₹]/);
+    if (cur) out = cur[0] + out;
+    return out;
+  }
+
+  return cell.text ?? String(v);
+}
+
+interface MergeInfo { rowSpan: number; colSpan: number }
+
+function getMerges(sheet: Worksheet): { masters: Map<string, MergeInfo>; covered: Set<string> } {
+  const masters = new Map<string, MergeInfo>();
+  const covered = new Set<string>();
+  const merges: string[] = ((sheet as any).model?.merges as string[]) || [];
+  const colNum = (letters: string) => letters.split('').reduce((acc, ch) => acc * 26 + (ch.charCodeAt(0) - 64), 0);
+  for (const range of merges) {
+    const m = range.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+    if (!m) continue;
+    const c1 = colNum(m[1]), r1 = parseInt(m[2], 10), c2 = colNum(m[3]), r2 = parseInt(m[4], 10);
+    masters.set(`${r1},${c1}`, { rowSpan: r2 - r1 + 1, colSpan: c2 - c1 + 1 });
+    for (let r = r1; r <= r2; r++) {
+      for (let c = c1; c <= c2; c++) {
+        if (r !== r1 || c !== c1) covered.add(`${r},${c}`);
+      }
+    }
+  }
+  return { masters, covered };
+}
+
+/**
+ * Reproduce one worksheet as styled HTML: real column widths, row heights,
+ * merged cells, fills, fonts, borders, alignment and number formats — then the
+ * browser renders it and the visual pipeline turns that into the PDF.
+ * `fit` scales everything down uniformly (Excel's "fit to page width").
+ */
+function sheetToHtml(sheet: Worksheet, fit: number): string {
+  const rowCount = Math.min(sheet.rowCount, MAX_ROWS_PER_SHEET);
+  const colCount = Math.min(sheet.columnCount || 1, MAX_COLS_PER_SHEET);
+  const { masters, covered } = getMerges(sheet);
+  const showGrid = sheet.views?.[0]?.showGridLines !== false;
+  const px = (n: number) => `${Math.max(1, Math.round(n * fit * 10) / 10)}px`;
+
+  const visibleCols: number[] = [];
+  const colWidths: number[] = [];
+  for (let c = 1; c <= colCount; c++) {
+    const col = sheet.getColumn(c);
+    if (col?.hidden) continue;
+    visibleCols.push(c);
+    colWidths.push(((col?.width ?? 8.43) * 7) + 5); // Excel width units → px
+  }
+  if (visibleCols.length === 0) return '';
+
+  let html = `<table style="border-collapse:collapse;table-layout:fixed;width:${px(colWidths.reduce((a, b) => a + b, 0))};background:#fff;">`;
+  html += '<colgroup>' + colWidths.map(w => `<col style="width:${px(w)}">`).join('') + '</colgroup>';
+
+  for (let r = 1; r <= rowCount; r++) {
+    const row = sheet.getRow(r);
+    if (row?.hidden) continue;
+    const rowH = (row?.height ?? 15) * (96 / 72); // points → px
+    html += `<tr style="height:${px(rowH)};">`;
+
+    for (const c of visibleCols) {
+      if (covered.has(`${r},${c}`)) continue;
+      const cell = row.getCell(c);
+      const merge = masters.get(`${r},${c}`);
+      const style = cell.style || {};
+      const font: any = style.font || {};
+      const fill: any = style.fill || {};
+      const border: any = style.border || {};
+      const align: any = style.alignment || {};
+
+      // No overflow clipping: the tr height acts as a minimum and rows grow to
+      // fit their content, so nothing is ever cut off.
+      const css: string[] = ['box-sizing:border-box', `padding:${px(1)} ${px(4)}`];
+      const gridColor = showGrid ? '#d8dbe0' : 'transparent';
+      css.push(`border-top:${borderSide(border.top) || `1px solid ${gridColor}`}`);
+      css.push(`border-left:${borderSide(border.left) || `1px solid ${gridColor}`}`);
+      css.push(`border-bottom:${borderSide(border.bottom) || `1px solid ${gridColor}`}`);
+      css.push(`border-right:${borderSide(border.right) || `1px solid ${gridColor}`}`);
+
+      if (fill.type === 'pattern' && fill.pattern !== 'none') {
+        const bg = argbToCss(fill.fgColor);
+        if (bg) css.push(`background:${bg}`);
+      }
+
+      css.push(`font-size:${px((font.size ?? 11) * (96 / 72))}`);
+      css.push(`font-family:${font.name ? `'${font.name}',` : ''}Calibri,Arial,Helvetica,sans-serif`);
+      if (font.bold) css.push('font-weight:bold');
+      if (font.italic) css.push('font-style:italic');
+      const deco = [font.underline ? 'underline' : '', font.strike ? 'line-through' : ''].filter(Boolean).join(' ');
+      if (deco) css.push(`text-decoration:${deco}`);
+      const fc = argbToCss(font.color);
+      if (fc) css.push(`color:${fc}`);
+
+      const raw = (cell.value as any)?.result !== undefined ? (cell.value as any).result : cell.value;
+      const defaultAlign = typeof raw === 'number' || raw instanceof Date ? 'right' : 'left';
+      css.push(`text-align:${align.horizontal && align.horizontal !== 'fill' ? align.horizontal : defaultAlign}`);
+      // html2canvas draws bottom-aligned table text half a line too low, so the
+      // row border strikes through it — middle alignment renders cleanly.
+      css.push(`vertical-align:${align.vertical === 'top' ? 'top' : 'middle'}`);
+      // Preserve every character: wrap instead of clipping like Excel does on screen.
+      css.push('white-space:pre-wrap', 'word-break:break-word', 'line-height:normal');
+
+      const span = merge ? ` rowspan="${merge.rowSpan}" colspan="${merge.colSpan}"` : '';
+      html += `<td${span} style="${css.join(';')}">${escapeHtml(formatCellValue(cell))}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</table>';
+
+  const truncated = sheet.rowCount > MAX_ROWS_PER_SHEET
+    ? `<p style="font:italic 11px Arial;color:#888;margin:6px 0 0;">Showing first ${MAX_ROWS_PER_SHEET} of ${sheet.rowCount} rows.</p>`
+    : '';
+  return html + truncated;
+}
+
+function sheetNaturalWidth(sheet: Worksheet): number {
+  const colCount = Math.min(sheet.columnCount || 1, MAX_COLS_PER_SHEET);
+  let total = 0;
+  for (let c = 1; c <= colCount; c++) {
+    const col = sheet.getColumn(c);
+    if (col?.hidden) continue;
+    total += ((col?.width ?? 8.43) * 7) + 5;
+  }
+  return total;
+}
+
+// Minimal RFC-4180 CSV parser (quoted fields, embedded commas/newlines).
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } else inQuotes = false;
+      } else field += ch;
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      row.push(field); field = '';
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(field); field = '';
+      rows.push(row); row = [];
+    } else field += ch;
+  }
+  if (field !== '' || row.length > 0) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(cell => cell.trim() !== ''));
+}
+
+function csvToHtml(rows: string[][]): string {
+  if (rows.length === 0) return '<p style="font:12px Arial;color:#888;">Empty file.</p>';
+  const cols = Math.max(...rows.map(r => r.length));
+  let html = '<table style="border-collapse:collapse;width:100%;background:#fff;table-layout:fixed;">';
+  rows.slice(0, MAX_ROWS_PER_SHEET).forEach((r, ri) => {
+    html += '<tr>';
+    for (let c = 0; c < cols; c++) {
+      const isHeader = ri === 0;
+      html += `<td style="border:1px solid #d8dbe0;padding:3px 6px;font:${isHeader ? 'bold ' : ''}11px Calibri,Arial,sans-serif;${isHeader ? 'background:#eef1f6;' : ''}white-space:pre-wrap;word-break:break-word;vertical-align:top;">${escapeHtml(r[c] ?? '')}</td>`;
+    }
+    html += '</tr>';
+  });
+  html += '</table>';
+  if (rows.length > MAX_ROWS_PER_SHEET) html += `<p style="font:italic 11px Arial;color:#888;">Showing first ${MAX_ROWS_PER_SHEET} of ${rows.length} rows.</p>`;
+  return html;
+}
 
 export default function ExcelToPdfPage() {
   return (
@@ -11,224 +242,47 @@ export default function ExcelToPdfPage() {
       onProcess={async (files) => {
         const file = files[0];
         const ext = file.name.split('.').pop()?.toLowerCase();
-        const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib');
 
         if (ext === 'xls') {
           throw new Error('Legacy .xls files are not supported. Save the file as .xlsx in Excel and try again.');
         }
 
-        // WinAnsi-safe sanitizer shared by the CSV and XLSX paths
-        const sanitizeCell = (val: string) => val
-          .replace(/[\x00-\x1F\x7F]/g, ' ')
-          .replace(/[\u{1F000}-\u{1FFFF}]/gu, '?')
-          .replace(/[\u{2600}-\u{27BF}]/gu, '-')
-          .replace(/[\u{FE00}-\u{FE0F}\u{200D}]/gu, '')
-          .replace(/[^\x20-\x7E\xA0-\xFF]/g, c => {
-            const code = c.charCodeAt(0);
-            if (code === 0x2013 || code === 0x2014) return '-';
-            if (code === 0x2026) return '...';
-            if (code === 0x2018 || code === 0x2019) return "'";
-            if (code === 0x201C || code === 0x201D) return '"';
-            return '';
-          })
-          .trim();
-
         if (ext === 'csv') {
-          const text = await file.text();
-          const lines = text.split(/\r?\n/);
-          const pdf = await PDFDocument.create();
-          const font = await pdf.embedFont(StandardFonts.Courier);
-          const A4_W = 595.28;
-          const A4_H = 841.89;
-          const MARGIN = 40;
-          const LINE_H = 11;
-
-          let page = pdf.addPage([A4_W, A4_H]);
-          let cursorY = A4_H - MARGIN;
-
-          for (const line of lines) {
-            if (cursorY < MARGIN + LINE_H) {
-              page = pdf.addPage([A4_W, A4_H]);
-              cursorY = A4_H - MARGIN;
-            }
-            let clean = sanitizeCell(line);
-            if (clean.length > 100) clean = clean.substring(0, 97) + '...';
-            page.drawText(clean, {
-              x: MARGIN,
-              y: cursorY,
-              size: 8,
-              font,
-              color: rgb(0.1, 0.1, 0.1),
-            });
-            cursorY -= LINE_H;
-          }
-
-          const bytes = await pdf.save();
-          return new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
+          const rows = parseCsv(await file.text());
+          const html = `<div style="padding:16px;background:#fff;">${csvToHtml(rows)}</div>`;
+          return htmlToPdfVisual(html);
         }
 
-        // Parse XLSX with exceljs
         const ExcelJS = (await import('exceljs')).default;
-        const buf = await file.arrayBuffer();
         const workbook = new ExcelJS.Workbook();
         try {
-          await workbook.xlsx.load(buf);
+          await workbook.xlsx.load(await file.arrayBuffer());
         } catch {
           throw new Error(`"${file.name}" could not be read as an Excel workbook. Make sure it is a valid .xlsx file.`);
         }
 
-        const A4_W = 595.28;
-        const A4_H = 841.89;
-        const MARGIN_LEFT = 36;
-        const MARGIN_RIGHT = 36;
-        const MARGIN_TOP = 50;
-        const MARGIN_BOTTOM = 40;
-        const USABLE_W = A4_W - MARGIN_LEFT - MARGIN_RIGHT;
-        const ROW_H = 16;
-        const HEADER_H = 20;
+        const sheets = workbook.worksheets.filter(s => s.state !== 'hidden' && s.state !== 'veryHidden' && s.rowCount > 0);
+        if (sheets.length === 0) throw new Error('No visible data found in this workbook.');
 
-        const pdf = await PDFDocument.create();
-        const font = await pdf.embedFont(StandardFonts.Helvetica);
-        const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
+        // Excel-style page setup: widest sheet decides portrait vs landscape,
+        // then each sheet is fit-to-width for that orientation.
+        const widest = Math.max(...sheets.map(sheetNaturalWidth));
+        const orientation: 'portrait' | 'landscape' = widest > PORTRAIT_PX * 1.25 ? 'landscape' : 'portrait';
+        const containerPx = (orientation === 'landscape' ? LANDSCAPE_PX : PORTRAIT_PX) - 32;
 
-        workbook.eachSheet((sheet) => {
-          const rowCount = sheet.rowCount;
-          const colCount = sheet.columnCount;
-          if (rowCount === 0 || colCount === 0) return;
-
-          // Calculate column widths based on content
-          const colWidths: number[] = [];
-          const maxCols = Math.min(colCount, 20); // Cap columns
-          for (let c = 1; c <= maxCols; c++) {
-            let maxW = 30; // minimum width
-            const col = sheet.getColumn(c);
-            col.eachCell({ includeEmpty: false }, (cell) => {
-              // cell.text resolves formulas, rich text and hyperlinks to their
-              // displayed value (String(cell.value) prints "[object Object]").
-              const val = sanitizeCell(cell.text || '');
-              const w = font.widthOfTextAtSize(val.substring(0, 30), 8);
-              if (w > maxW) maxW = w;
-            });
-            colWidths.push(Math.min(maxW + 12, USABLE_W / maxCols));
+        const parts: string[] = [];
+        for (const sheet of sheets) {
+          const natural = sheetNaturalWidth(sheet);
+          const fit = Math.min(1, containerPx / Math.max(natural, 1));
+          if (parts.length > 0) parts.push('<div style="height:24px;"></div>');
+          if (sheets.length > 1) {
+            parts.push(`<div style="font:bold 13px Calibri,Arial,sans-serif;color:#333;background:#e9edf3;border:1px solid #cfd6df;border-bottom:0;display:inline-block;padding:5px 14px;border-radius:6px 6px 0 0;">${escapeHtml(sheet.name)}</div>`);
           }
-
-          // Normalize to fit page
-          const totalW = colWidths.reduce((a, b) => a + b, 0);
-          if (totalW > USABLE_W) {
-            const scale = USABLE_W / totalW;
-            for (let i = 0; i < colWidths.length; i++) colWidths[i] *= scale;
-          }
-
-          let page = pdf.addPage([A4_W, A4_H]);
-          let cursorY = A4_H - MARGIN_TOP;
-
-          // Sheet title
-          const safeSheetName = sheet.name.replace(/[\x00-\x1F\x7F]/g, ' ').replace(/[^\x20-\x7E\xA0-\xFF]/g, '');
-          page.drawText(safeSheetName, {
-            x: MARGIN_LEFT,
-            y: cursorY,
-            size: 14,
-            font: fontBold,
-            color: rgb(0.15, 0.25, 0.5),
-          });
-          cursorY -= 24;
-
-          // Draw rows
-          const maxRows = Math.min(rowCount, 500); // Cap rows
-          for (let r = 1; r <= maxRows; r++) {
-            const row = sheet.getRow(r);
-            const isHeader = r === 1;
-
-            if (cursorY - ROW_H < MARGIN_BOTTOM) {
-              page = pdf.addPage([A4_W, A4_H]);
-              cursorY = A4_H - MARGIN_TOP;
-            }
-
-            let x = MARGIN_LEFT;
-            for (let c = 0; c < maxCols; c++) {
-              const cell = row.getCell(c + 1);
-              const val = cell.text || '';
-
-              const cellW = colWidths[c];
-              const cellFont = isHeader ? fontBold : font;
-              const fontSize = 8;
-
-              // Draw cell background
-              if (isHeader) {
-                page.drawRectangle({
-                  x, y: cursorY - 4,
-                  width: cellW, height: HEADER_H,
-                  color: rgb(0.15, 0.25, 0.5),
-                });
-              } else if (r % 2 === 0) {
-                page.drawRectangle({
-                  x, y: cursorY - 4,
-                  width: cellW, height: ROW_H,
-                  color: rgb(0.96, 0.97, 0.98),
-                });
-              }
-
-              // Draw cell border
-              page.drawRectangle({
-                x, y: cursorY - 4,
-                width: cellW, height: isHeader ? HEADER_H : ROW_H,
-                borderColor: rgb(0.82, 0.84, 0.88),
-                borderWidth: 0.4,
-              });
-
-              let displayVal = sanitizeCell(val);
-              const beforeFit = displayVal;
-              while (displayVal && cellFont.widthOfTextAtSize(displayVal, fontSize) > cellW - 6 && displayVal.length > 1) {
-                displayVal = displayVal.slice(0, -1);
-              }
-              // Mark only genuine width truncation, and keep the marker inside the cell.
-              if (displayVal !== beforeFit) {
-                while (displayVal.length > 1 && cellFont.widthOfTextAtSize(displayVal + '...', fontSize) > cellW - 6) {
-                  displayVal = displayVal.slice(0, -1);
-                }
-                displayVal += '...';
-              }
-
-              const textColor = isHeader ? rgb(1, 1, 1) : rgb(0.1, 0.1, 0.1);
-              page.drawText(displayVal, {
-                x: x + 3,
-                y: cursorY + 1,
-                size: fontSize,
-                font: cellFont,
-                color: textColor,
-                maxWidth: cellW - 6,
-              });
-
-              x += cellW;
-            }
-
-            cursorY -= isHeader ? HEADER_H : ROW_H;
-          }
-
-          // Sheet footer
-          page.drawText(`Sheet: ${safeSheetName} | Rows: ${Math.min(rowCount, maxRows)}${rowCount > maxRows ? ` (showing first ${maxRows})` : ''}`, {
-            x: MARGIN_LEFT,
-            y: MARGIN_BOTTOM - 10,
-            size: 7,
-            font,
-            color: rgb(0.5, 0.5, 0.5),
-          });
-        });
-
-        if (pdf.getPageCount() === 0) {
-          const page = pdf.addPage([A4_W, A4_H]);
-          const fontRegular = await pdf.embedFont(StandardFonts.Helvetica);
-          page.drawText('No data found in spreadsheet.', {
-            x: MARGIN_LEFT,
-            y: A4_H - MARGIN_TOP,
-            size: 12,
-            font: fontRegular,
-            color: rgb(0.4, 0.4, 0.4),
-          });
+          parts.push(sheetToHtml(sheet, fit));
         }
 
-        const bytes = await pdf.save();
-        return new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
+        const html = `<div style="padding:16px;background:#fff;">${parts.join('')}</div>`;
+        return htmlToPdfVisual(html, undefined, { orientation });
       }}
     />
   );
