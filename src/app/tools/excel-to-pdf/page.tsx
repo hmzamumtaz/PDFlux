@@ -2,6 +2,7 @@
 
 import ToolPage from '@/components/ToolPage';
 import { htmlToPdfVisual } from '@/lib/pdf-engine';
+import { assertExpectedInput } from '@/lib/input-guard';
 import type { Cell, Worksheet } from 'exceljs';
 
 const MAX_ROWS_PER_SHEET = 3000;
@@ -405,6 +406,11 @@ export default function ExcelToPdfPage() {
       processLabel="Convert to PDF"
       onProcess={async (files) => {
         const file = files[0];
+        assertExpectedInput(file, {
+          extensions: ['.xlsx', '.csv', '.xls'],
+          label: 'a spreadsheet',
+          counterpart: { extensions: ['.pdf'], toolName: 'PDF to Excel', does: 'turn PDF tables into a spreadsheet' },
+        });
         const ext = file.name.split('.').pop()?.toLowerCase();
 
         if (ext === 'xls') {

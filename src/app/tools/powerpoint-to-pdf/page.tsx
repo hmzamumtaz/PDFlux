@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import ToolPage from '@/components/ToolPage';
 import { renderPptxToPdf } from '@/lib/pptx-render';
+import { assertExpectedInput } from '@/lib/input-guard';
 
 export default function PowerPointToPdfPage() {
   const [status, setStatus] = useState<string | null>(null);
@@ -25,6 +26,11 @@ export default function PowerPointToPdfPage() {
         </div>
       }
       onProcess={async (files) => {
+        assertExpectedInput(files[0], {
+          extensions: ['.pptx'],
+          label: 'a PowerPoint presentation',
+          counterpart: { extensions: ['.pdf'], toolName: 'PDF to PowerPoint', does: 'turn a PDF into editable slides' },
+        });
         setSummary(null);
         const res = await renderPptxToPdf(files[0], (s, t) => setStatus(`Rendering slide ${s} of ${t}...`));
         setStatus(null);
