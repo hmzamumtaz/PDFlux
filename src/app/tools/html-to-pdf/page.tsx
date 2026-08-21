@@ -5,21 +5,6 @@ import { ArrowLeft, Loader2, AlertCircle, CheckCircle2, FileDown, Code2, Eye, Pa
 import Link from 'next/link';
 import { htmlToPdf, htmlToPdfVisual, downloadBlob, getOutputFilename } from '@/lib/pdf-engine';
 
-const SAMPLE_HTML = `<div style="font-family: Georgia, serif; padding: 24px;">
-  <h1 style="color: #4338ca; border-bottom: 3px solid #4338ca; padding-bottom: 8px;">Hello World</h1>
-  <p>This HTML is <strong>rendered with its full design</strong> — colors, fonts,
-  backgrounds and layout — and then converted to PDF.</p>
-  <div style="background: linear-gradient(135deg, #eef2ff, #fdf4ff); border: 1px solid #c7d2fe; border-radius: 12px; padding: 16px; margin: 16px 0;">
-    <h2 style="margin: 0 0 8px; color: #6d28d9;">Styled box</h2>
-    <p style="margin: 0;">CSS styling is preserved exactly as the browser renders it.</p>
-  </div>
-  <ul>
-    <li>Upload an .html file or paste markup</li>
-    <li>Check the live design preview</li>
-    <li>Convert to PDF</li>
-  </ul>
-</div>`;
-
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -27,7 +12,7 @@ function formatBytes(bytes: number): string {
 }
 
 export default function HtmlToPdfPage() {
-  const [html, setHtml] = useState(SAMPLE_HTML);
+  const [html, setHtml] = useState('');
   const [mode, setMode] = useState<'design' | 'text'>('design');
   const [tab, setTab] = useState<'code' | 'preview'>('preview');
   const [processing, setProcessing] = useState(false);
@@ -119,13 +104,27 @@ export default function HtmlToPdfPage() {
               <div className="px-4 py-2 bg-gray-50 border-b border-border text-xs font-medium text-muted-foreground">
                 Live preview — this is the design that will be converted
               </div>
-              <iframe
-                sandbox=""
-                srcDoc={previewDoc}
-                title="HTML design preview"
-                className="w-full bg-white"
-                style={{ height: 420, border: 0 }}
-              />
+              {html.trim() ? (
+                <iframe
+                  sandbox=""
+                  srcDoc={previewDoc}
+                  title="HTML design preview"
+                  className="w-full bg-white"
+                  style={{ height: 420, border: 0 }}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-3 bg-white text-center px-6" style={{ height: 420 }}>
+                  <div className="w-14 h-14 rounded-2xl bg-violet-50 flex items-center justify-center">
+                    <Eye className="w-7 h-7 text-violet-400" />
+                  </div>
+                  <p className="text-sm font-semibold text-foreground">Your design preview will appear here</p>
+                  <p className="text-xs text-muted-foreground max-w-sm leading-relaxed">
+                    Upload an <span className="font-medium">.html</span> file above, or switch to the{' '}
+                    <button onClick={() => setTab('code')} className="text-violet-600 font-medium hover:underline">HTML code</button>{' '}
+                    tab and paste your markup. The page renders here with its full design — exactly what your PDF will look like.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
