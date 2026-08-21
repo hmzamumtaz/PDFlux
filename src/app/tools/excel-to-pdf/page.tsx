@@ -22,7 +22,6 @@ export default function ExcelToPdfPage() {
           const A4_H = 841.89;
           const MARGIN = 40;
           const LINE_H = 11;
-          const COL_W = 90;
 
           let page = pdf.addPage([A4_W, A4_H]);
           let cursorY = A4_H - MARGIN;
@@ -32,7 +31,9 @@ export default function ExcelToPdfPage() {
               page = pdf.addPage([A4_W, A4_H]);
               cursorY = A4_H - MARGIN;
             }
-            page.drawText(line.substring(0, 100), {
+            // Strip all control characters and non-Latin before drawing
+            const clean = line.replace(/[\x00-\x1F\x7F]/g, ' ').substring(0, 100);
+            page.drawText(clean, {
               x: MARGIN,
               y: cursorY,
               size: 8,
@@ -96,7 +97,8 @@ export default function ExcelToPdfPage() {
           let cursorY = A4_H - MARGIN_TOP;
 
           // Sheet title
-          page.drawText(sheet.name, {
+          const safeSheetName = sheet.name.replace(/[\x00-\x1F\x7F]/g, ' ').replace(/[^\x20-\x7E\xA0-\xFF]/g, '');
+          page.drawText(safeSheetName, {
             x: MARGIN_LEFT,
             y: cursorY,
             size: 14,
@@ -148,19 +150,25 @@ export default function ExcelToPdfPage() {
                 borderWidth: 0.4,
               });
 
-              // Truncate text to fit cell, strip newlines and non-Latin chars
-              let displayVal = val.replace(/[\r\n]+/g, ' ').replace(/[\u{1F000}-\u{1FFFF}]/gu, '?').replace(/[^\x20-\x7E\xA0-\xFF]/g, c => {
-                const code = c.charCodeAt(0);
-                if (code >= 0x20 && code <= 0x7E) return c;
-                if (code >= 0xA0 && code <= 0xFF) return c;
-                if (code === 0x2013 || code === 0x2014) return '-';
-                if (code === 0x2026) return '...';
-                return '';
-              });
+              // Sanitize: strip ALL control chars, emoji, non-Latin, newlines
+              let displayVal = val
+                .replace(/[\x00-\x1F\x7F]/g, ' ')           // all control chars including \n \r \t
+                .replace(/[\u{1F000}-\u{1FFFF}]/gu, '?')     // emoji
+                .replace(/[\u{2600}-\u{27BF}]/gu, '-')        // misc symbols
+                .replace(/[\u{FE00}-\u{FE0F}\u{200D}]/gu, '') // variation selectors, ZWJ
+                .replace(/[^\x20-\x7E\xA0-\xFF]/g, c => {     // WinAnsi-safe
+                  const code = c.charCodeAt(0);
+                  if (code === 0x2013 || code === 0x2014) return '-';
+                  if (code === 0x2026) return '...';
+                  if (code === 0x2018 || code === 0x2019) return "'";
+                  if (code === 0x201C || code === 0x201D) return '"';
+                  return '';
+                })
+                .trim();
               while (displayVal && cellFont.widthOfTextAtSize(displayVal, fontSize) > cellW - 6 && displayVal.length > 1) {
                 displayVal = displayVal.slice(0, -1);
               }
-              if (displayVal !== val) displayVal += '\u2026';
+              if (displayVal !== val) displayVal += '...';
 
               const textColor = isHeader ? rgb(1, 1, 1) : rgb(0.1, 0.1, 0.1);
               page.drawText(displayVal, {
