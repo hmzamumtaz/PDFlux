@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "PDFlux - Modern PDF Toolkit",
-  description: "Edit, convert, merge, compress, and optimize your PDFs. 100% private, processed in your browser.",
+  description: "Edit, convert, merge, compress, and optimize your PDFs. Files are processed in your browser — nothing is uploaded (except optional online translation).",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

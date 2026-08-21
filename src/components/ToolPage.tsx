@@ -6,7 +6,7 @@ import * as LucideIcons from 'lucide-react';
 import Link from 'next/link';
 import { getToolBySlug } from '@/lib/tools-data';
 import FileUpload from './FileUpload';
-import { downloadBlob, renderPdfPages } from '@/lib/pdf-engine';
+import { downloadBlob, downloadBlobsAsZip, renderPdfPages } from '@/lib/pdf-engine';
 
 interface ToolPageProps {
   slug: string;
@@ -27,18 +27,31 @@ interface ProcessedResult {
   result: Blob;
 }
 
-function getOutputName(sourceFile: File, result: Blob) {
-  const extMap: Record<string, string> = {
-    'application/pdf': '.pdf',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
-    'text/markdown': '.md',
-    'text/plain': '.txt',
-    'text/html': '.html',
-  };
-  const ext = extMap[result.type] || (result.type.startsWith('image/') ? '.jpg' : '.bin');
-  return sourceFile.name.replace(/\.pdf$/i, '') + ext;
+const EXT_MAP: Record<string, string> = {
+  'application/pdf': '.pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+  'text/markdown': '.md',
+  'text/plain': '.txt',
+  'text/html': '.html',
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+};
+
+function getOutputName(sourceFile: File, result: Blob, seq?: number) {
+  const ext = EXT_MAP[result.type] || (result.type.startsWith('image/') ? '.jpg' : '.bin');
+  const base = sourceFile.name.replace(/\.[^./\\]+$/, '');
+  return seq !== undefined ? `${base}_${seq}${ext}` : base + ext;
+}
+
+// When one source produces several outputs (e.g. PDF → one JPG per page),
+// number them so the files don't all collide on the same name.
+function sequenceFor(results: ProcessedResult[], index: number): number | undefined {
+  const r = results[index];
+  const siblings = results.filter(o => o.sourceFile === r.sourceFile && (o.result.type || '') === (r.result.type || ''));
+  if (siblings.length <= 1) return undefined;
+  return siblings.indexOf(r) + 1;
 }
 
 function ViewToggle({ mode, onChange }: { mode: 'list' | 'grid'; onChange: (m: 'list' | 'grid') => void }) {
@@ -189,7 +202,7 @@ function ResultGridPreview({ results, currentIndex, onPrev, onNext, onDownload, 
   );
 }
 
-function ResultCard({ sourceFile, result, index, onDownload, onDelete }: { sourceFile: File; result: Blob; index: number; onDownload: () => void; onDelete: () => void }) {
+function ResultCard({ sourceFile, result, seq, onDownload, onDelete }: { sourceFile: File; result: Blob; seq?: number; onDownload: () => void; onDelete: () => void }) {
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -201,7 +214,7 @@ function ResultCard({ sourceFile, result, index, onDownload, onDelete }: { sourc
         <FileText className="w-5 h-5 text-primary" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-foreground truncate">{getOutputName(sourceFile, result)}</p>
+        <p className="text-sm font-medium text-foreground truncate">{getOutputName(sourceFile, result, seq)}</p>
         <p className="text-xs text-muted-foreground">{formatSize(result.size)}</p>
       </div>
       <div className="flex items-center gap-1 shrink-0">
@@ -318,23 +331,23 @@ export default function ToolPage({
   }, [files, selected, onProcess, processOptions, processAllTogether]);
 
   const handleDownloadResult = useCallback((result: ProcessedResult) => {
-    const extMap: Record<string, string> = {
-      'application/pdf': '.pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
-      'text/markdown': '.md', 'text/plain': '.txt', 'text/html': '.html',
-    };
-    const ext = extMap[result.result.type] || (result.result.type.startsWith('image/') ? '.jpg' : '.bin');
-    downloadBlob(result.result, `${result.sourceFile.name.replace(/\.pdf$/i, '')}${ext}`);
-  }, []);
+    const index = results.indexOf(result);
+    downloadBlob(result.result, getOutputName(result.sourceFile, result.result, index >= 0 ? sequenceFor(results, index) : undefined));
+  }, [results]);
 
   const handleDeleteResult = useCallback((index: number) => {
     setResults(prev => prev.filter((_, i) => i !== index));
   }, []);
 
-  const handleDownloadAll = useCallback(() => {
-    results.forEach(r => handleDownloadResult(r));
+  const handleDownloadAll = useCallback(async () => {
+    if (results.length === 1) {
+      handleDownloadResult(results[0]);
+      return;
+    }
+    // Browsers block bursts of separate downloads — bundle into one ZIP.
+    const entries = results.map((r, i) => ({ blob: r.result, name: getOutputName(r.sourceFile, r.result, sequenceFor(results, i)) }));
+    const base = results[0]?.sourceFile.name.replace(/\.[^./\\]+$/, '') || 'output';
+    await downloadBlobsAsZip(entries, `${base}_pdflux.zip`);
   }, [results, handleDownloadResult]);
 
   const handleReset = useCallback(() => {
@@ -387,7 +400,7 @@ export default function ToolPage({
                   </div>
                 </div>
                 {rightView === 'list' || !multiple ? (
-                  <div className="space-y-2">{results.map((r, i) => <ResultCard key={i} sourceFile={r.sourceFile} result={r.result} index={i} onDownload={() => handleDownloadResult(r)} onDelete={() => handleDeleteResult(i)} />)}</div>
+                  <div className="space-y-2">{results.map((r, i) => <ResultCard key={i} sourceFile={r.sourceFile} result={r.result} seq={sequenceFor(results, i)} onDownload={() => handleDownloadResult(r)} onDelete={() => handleDeleteResult(i)} />)}</div>
                 ) : (
                   <ResultGridPreview results={results} currentIndex={rightGridIdx} onPrev={() => setRightGridIdx(i => Math.max(0, i - 1))} onNext={() => setRightGridIdx(i => Math.min(results.length - 1, i + 1))} onDownload={() => handleDownloadResult(results[rightGridIdx])} onDelete={() => { handleDeleteResult(rightGridIdx); setRightGridIdx(i => Math.min(i, results.length - 2)); }} />
                 )}
@@ -437,7 +450,7 @@ export default function ToolPage({
                       </div>
                       {rightView === 'list' || !multiple ? (
                         <div className="space-y-2 max-h-96 overflow-y-auto">
-                          {results.map((r, i) => <ResultCard key={i} sourceFile={r.sourceFile} result={r.result} index={i} onDownload={() => handleDownloadResult(r)} onDelete={() => handleDeleteResult(i)} />)}
+                          {results.map((r, i) => <ResultCard key={i} sourceFile={r.sourceFile} result={r.result} seq={sequenceFor(results, i)} onDownload={() => handleDownloadResult(r)} onDelete={() => handleDeleteResult(i)} />)}
                         </div>
                       ) : (
                         <ResultGridPreview results={results} currentIndex={rightGridIdx} onPrev={() => setRightGridIdx(i => Math.max(0, i - 1))} onNext={() => setRightGridIdx(i => Math.min(results.length - 1, i + 1))} onDownload={() => handleDownloadResult(results[rightGridIdx])} onDelete={() => { handleDeleteResult(rightGridIdx); setRightGridIdx(i => Math.min(i, results.length - 2)); }} />

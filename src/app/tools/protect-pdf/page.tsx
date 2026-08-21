@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { ArrowLeft, Loader2, Lock, AlertCircle, Check, Download, Trash2, FileDown, List, LayoutGrid, ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
-import { protectPdf, downloadBlob, renderPdfPages } from '@/lib/pdf-engine';
+import { protectPdf, downloadBlob, downloadBlobsAsZip, renderPdfPages } from '@/lib/pdf-engine';
 
 interface FilePassword {
   file: File;
@@ -38,26 +38,27 @@ function ResultGridPreview({ results, currentIndex, onPrev, onNext, onDownload, 
 }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const r = results[currentIndex];
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       setPreviewUrl(null);
+      setFailed(false);
       try {
         const pages = await renderPdfPages(r.sourceFile, [1]);
         if (!cancelled && pages[0]) setPreviewUrl(pages[0].url);
       } catch {
-        const url = URL.createObjectURL(r.result);
-        if (!cancelled) setPreviewUrl(url);
+        if (!cancelled) setFailed(true);
       }
     };
     load();
     return () => { cancelled = true; };
-  }, [currentIndex]);
+  }, [currentIndex, r]);
   const name = r.sourceFile.name.replace(/\.pdf$/i, '_protected.pdf');
   return (
     <div className="flex flex-col items-center gap-3">
       <div className="w-full bg-gray-50 rounded-xl border border-border overflow-hidden flex items-center justify-center" style={{ minHeight: 250, maxHeight: 350 }}>
-        {previewUrl ? <img src={previewUrl} alt="Preview" className="max-w-full max-h-[350px] object-contain" /> : <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />}
+        {previewUrl ? <img src={previewUrl} alt="Preview" className="max-w-full max-h-[350px] object-contain" /> : failed ? <Lock className="w-10 h-10 text-muted-foreground" /> : <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />}
       </div>
       <p className="text-sm font-medium text-foreground truncate max-w-full">{name}</p>
       <div className="flex items-center gap-3">
@@ -87,7 +88,7 @@ function FileGridPreview({ files, currentIndex, onPrev, onNext }: {
     };
     load();
     return () => { cancelled = true; };
-  }, [currentIndex]);
+  }, [currentIndex, file]);
   return (
     <div className="flex flex-col items-center gap-3">
       <div className="w-full bg-gray-50 rounded-xl border border-border overflow-hidden flex items-center justify-center" style={{ minHeight: 250, maxHeight: 350 }}>
@@ -166,6 +167,8 @@ export default function ProtectPdfPage() {
       if (!fp.password) { setError(`Please set a password for ${fp.file.name}`); return; }
       if (fp.password !== fp.confirmPassword) { setError(`Passwords don't match for ${fp.file.name}`); return; }
       if (fp.password.length < 3) { setError(`Password for ${fp.file.name} must be at least 3 characters`); return; }
+      // PDF standard-security passwords are limited to Latin-1 characters.
+      if (!/^[\x20-\xFF]+$/.test(fp.password)) { setError(`The password for ${fp.file.name} contains unsupported characters. Use letters, numbers, and common symbols (no emoji or non-Latin scripts).`); return; }
     }
 
     setProcessing(true);
@@ -199,9 +202,24 @@ export default function ProtectPdfPage() {
     setResults(prev => prev.filter((_, i) => i !== index));
   }, []);
 
-  const handleDownloadAll = useCallback(() => {
-    results.forEach(r => downloadBlob(r.result, r.sourceFile.name.replace(/\.pdf$/i, '_protected.pdf')));
+  const handleDownloadAll = useCallback(async () => {
+    if (results.length === 1) {
+      downloadBlob(results[0].result, results[0].sourceFile.name.replace(/\.pdf$/i, '_protected.pdf'));
+      return;
+    }
+    await downloadBlobsAsZip(
+      results.map(r => ({ blob: r.result, name: r.sourceFile.name.replace(/\.pdf$/i, '_protected.pdf') })),
+      'protected_pdfs.zip',
+    );
   }, [results]);
+
+  const handleRemoveFile = useCallback((index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+    setFilePasswords({});
+    setResults([]);
+    setError(null);
+    setLeftGridIdx(0);
+  }, []);
 
   const handleReset = useCallback(() => {
     setFiles([]);
@@ -246,9 +264,19 @@ export default function ProtectPdfPage() {
                   {files.map((f, i) => (
                     <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-border bg-gray-50/50">
                       <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0"><Lock className="w-4 h-4 text-amber-500" /></div>
-                      <p className="text-sm text-foreground truncate">{f.name}</p>
+                      <p className="flex-1 min-w-0 text-sm text-foreground truncate">{f.name}</p>
+                      {results.length === 0 && (
+                        <button onClick={() => handleRemoveFile(i)} className="p-1.5 rounded-lg hover:bg-red-50 hover:text-red-600 text-muted-foreground transition-colors shrink-0" title="Remove file">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   ))}
+                  {results.length === 0 && (
+                    <button onClick={handleReset} className="w-full p-3 border-2 border-dashed border-border rounded-xl text-xs font-medium text-muted-foreground hover:border-primary hover:text-primary transition-all">
+                      Start over with different files
+                    </button>
+                  )}
                 </div>
               ) : (
                 <FileGridPreview files={files} currentIndex={leftGridIdx} onPrev={() => setLeftGridIdx(i => Math.max(0, i - 1))} onNext={() => setLeftGridIdx(i => Math.min(files.length - 1, i + 1))} />
@@ -301,7 +329,7 @@ export default function ProtectPdfPage() {
                                 <input type={showMaster ? 'text' : 'password'} value={fp.confirmPassword} onChange={(e) => updateFilePassword(i, 'confirmPassword', e.target.value)} placeholder="Confirm" className="flex-1 px-3 py-1.5 border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
                               </div>
                               {fp.password && fp.confirmPassword && fp.password !== fp.confirmPassword && (
-                                <p className="text-[10px] text-destructive">Passwords don't match</p>
+                                <p className="text-[10px] text-destructive">Passwords don&apos;t match</p>
                               )}
                             </div>
                           );

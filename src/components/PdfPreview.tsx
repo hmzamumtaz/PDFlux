@@ -28,6 +28,8 @@ export default function PdfPreview({ file, pageNumbers, label }: PdfPreviewProps
         setLoading(false);
       }
     }).catch(() => {
+      // Allow a retry on the next render instead of permanently blanking out.
+      prevKey.current = '';
       if (!cancelled) setLoading(false);
     });
 

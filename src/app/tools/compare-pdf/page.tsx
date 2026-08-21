@@ -96,7 +96,7 @@ export default function ComparePdfPage() {
             multiple
             maxFiles={2}
             files={files}
-            onFilesSelected={(f) => { setFiles(f.slice(0, 2)); setResult(null); setError(null); }}
+            onFilesSelected={(f) => { setFiles(prev => [...prev, ...f].slice(0, 2)); setResult(null); setError(null); }}
             onRemoveFile={(i) => { setFiles(prev => prev.filter((_, idx) => idx !== i)); setResult(null); }}
             label="Drop two PDF files to compare"
             description="Upload exactly 2 PDF files"

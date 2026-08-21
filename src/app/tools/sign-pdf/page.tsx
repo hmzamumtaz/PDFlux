@@ -1,27 +1,19 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ArrowLeft, Download, Loader2, Check, AlertCircle, PenTool, Type, Upload, AlertTriangle, X, FileImage } from 'lucide-react';
+import { ArrowLeft, Loader2, Check, AlertCircle, PenTool, Type, Upload, AlertTriangle, X, FileImage } from 'lucide-react';
 import Link from 'next/link';
-import { getToolBySlug } from '@/lib/tools-data';
 import FileUpload from '@/components/FileUpload';
-import { readFileAsArrayBuffer, loadPdf, downloadBlob, renderPdfPages, scanPageFooterWhitespace, type FooterWhitespaceResult } from '@/lib/pdf-engine';
+import { readFileAsArrayBuffer, loadPdf, downloadBlob, scanPdfForSigning, type FooterWhitespaceResult, type SignPageScan } from '@/lib/pdf-engine';
 
 type SigType = 'draw' | 'type' | 'upload';
 
-interface PageInfo {
-  page: number;
-  url: string;
-  width: number;
-  height: number;
-  whitespace: FooterWhitespaceResult | null;
-}
+type PageInfo = SignPageScan;
 
 const MIN_SIGN_WIDTH = 120;
 const MIN_SIGN_HEIGHT = 30;
 
 export default function SignPdfPage() {
-  const tool = getToolBySlug('sign-pdf');
   const [files, setFiles] = useState<File[]>([]);
   const [pages, setPages] = useState<PageInfo[]>([]);
   const [scanning, setScanning] = useState(false);
@@ -55,20 +47,15 @@ export default function SignPdfPage() {
     let cancelled = false;
     const scan = async () => {
       setScanning(true);
-      setScanProgress('Rendering pages...');
+      setScanProgress('Analyzing pages...');
       try {
-        const allPageNums = Array.from({ length: 100 }, (_, i) => i + 1); // max 100
-        const rendered = await renderPdfPages(files[0], allPageNums);
-        if (cancelled) return;
-
-        setScanProgress('Scanning for whitespace...');
-        const pageInfos: PageInfo[] = [];
-        for (const r of rendered) {
-          if (cancelled) return;
-          setScanProgress(`Scanning page ${r.page} of ${rendered.length}...`);
-          const ws = await scanPageFooterWhitespace(files[0], r.page, MIN_SIGN_WIDTH, MIN_SIGN_HEIGHT);
-          pageInfos.push({ ...r, whitespace: ws });
-        }
+        const pageInfos = await scanPdfForSigning(
+          files[0],
+          MIN_SIGN_WIDTH,
+          MIN_SIGN_HEIGHT,
+          { maxPages: 200 },
+          (page, total) => { if (!cancelled) setScanProgress(`Scanning page ${page} of ${total}...`); },
+        );
         if (!cancelled) {
           setPages(pageInfos);
           if (pageInfos.length === 1) setSelectedPage(1);
@@ -192,49 +179,55 @@ export default function SignPdfPage() {
       } else if (sigType === 'upload' && uploadedImage) {
         sigImgBytes = await fetch(uploadedImage).then(r => r.arrayBuffer());
       } else if (sigType === 'type' && signatureText.trim()) {
-        sigTextToDraw = signatureText.trim();
+        // Standard PDF fonts only encode Latin-1 — strip anything else and
+        // fail with a helpful message instead of a pdf-lib encoding crash.
+        sigTextToDraw = signatureText.trim().replace(/[^\x20-\x7E\xA0-\xFF]/g, '');
+        if (!sigTextToDraw.trim()) {
+          throw new Error('Typed signatures only support Latin characters. Please draw or upload your signature instead.');
+        }
       }
 
       const pdfPage = src.getPage(selectedPage - 1);
       const { width: pageW, height: pageH } = pdfPage.getSize();
 
-      // Calculate signature placement
-      let sigX: number, sigY: number, sigW: number, sigH: number;
+      // The box the signature must fit inside
+      const inWhitespace = !!(ws && ws.found && (ws.sufficient || forceSign));
+      const boxW = inWhitespace ? Math.max(ws!.width * 0.9, 40) : 150;
+      const boxH = inWhitespace ? Math.max(ws!.height * 0.9, 20) : 50;
 
-      if (ws && ws.found && (ws.sufficient || forceSign)) {
-        // Place in detected whitespace area, right-aligned
-        sigW = Math.min(ws.width * 0.9, 180);
-        sigH = sigW * 0.33;
-        // Right-align within the whitespace area
-        sigX = ws.x + ws.width - sigW;
-        sigY = ws.y;
-      } else if (ws && ws.found && !ws.sufficient && !forceSign) {
-        // Shouldn't reach here if warning was shown, but fallback
-        sigW = Math.min(ws.width, 150);
-        sigH = sigW * 0.33;
-        sigX = ws.x + ws.width - sigW;
-        sigY = ws.y;
+      // Size the signature preserving its aspect ratio, clamped to the box.
+      let img: Awaited<ReturnType<typeof src.embedPng>> | null = null;
+      if (sigImgBytes) {
+        const isPng = sigType === 'draw' || !!uploadedImage?.startsWith('data:image/png');
+        img = isPng ? await src.embedPng(sigImgBytes) : await src.embedJpg(sigImgBytes);
+      }
+      const aspect = img ? img.width / img.height : 3;
+      let sigW = Math.min(boxW, 180);
+      let sigH = sigW / aspect;
+      if (sigH > boxH) {
+        sigH = boxH;
+        sigW = sigH * aspect;
+      }
+
+      // Right-aligned inside the whitespace, or bottom-right fallback.
+      let sigX: number, sigY: number;
+      if (inWhitespace) {
+        sigX = ws!.x + ws!.width - sigW;
+        sigY = ws!.y;
       } else {
-        // Default fallback: bottom-right
-        sigW = 150;
-        sigH = 50;
         sigX = pageW - sigW - 40;
         sigY = 40;
       }
-
-      // Ensure signature fits within page bounds
       sigX = Math.max(20, Math.min(sigX, pageW - sigW - 20));
       sigY = Math.max(20, Math.min(sigY, pageH - sigH - 20));
 
-      if (sigImgBytes) {
-        const ext = uploadedImage?.includes('image/png') || (sigType === 'draw') ? 'png' : 'jpeg';
-        const img = ext === 'png'
-          ? await src.embedPng(sigImgBytes)
-          : await src.embedJpg(sigImgBytes);
+      if (img) {
         pdfPage.drawImage(img, { x: sigX, y: sigY, width: sigW, height: sigH });
       } else if (sigTextToDraw) {
         const font = await src.embedFont(StandardFonts.HelveticaBold);
-        const fontSize = Math.min(sigH * 0.7, 20);
+        let fontSize = Math.min(sigH * 0.9, 20);
+        // Shrink until the name fits the available width.
+        while (fontSize > 6 && font.widthOfTextAtSize(sigTextToDraw, fontSize) > sigW) fontSize -= 1;
         pdfPage.drawText(sigTextToDraw, {
           x: sigX,
           y: sigY + sigH / 2 - fontSize / 3,
@@ -245,7 +238,8 @@ export default function SignPdfPage() {
       }
 
       const bytes = await src.save();
-      downloadBlob(new Blob([bytes as any], { type: 'application/pdf' }), 'signed.pdf');
+      const outName = files[0].name.replace(/\.pdf$/i, '_signed.pdf');
+      downloadBlob(new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' }), outName);
       setDone(true);
     } catch (err: any) {
       setError(err.message || 'Failed to sign PDF');
@@ -283,6 +277,33 @@ export default function SignPdfPage() {
             <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-3 animate-fade-in">
               <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
               <p className="text-sm font-medium text-blue-800">{scanProgress}</p>
+            </div>
+          )}
+
+          {/* Scan / global errors (visible even before a page is selected) */}
+          {error && selectedPage === null && (
+            <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 animate-fade-in">
+              <AlertCircle className="w-5 h-5 text-destructive shrink-0" />
+              <p className="text-sm text-destructive">{error}</p>
+            </div>
+          )}
+
+          {/* Success confirmation */}
+          {done && (
+            <div className="mt-6 p-5 bg-green-50 border border-green-200 rounded-xl animate-fade-in">
+              <div className="flex items-start gap-3">
+                <Check className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-green-800 mb-1">PDF signed successfully</p>
+                  <p className="text-sm text-green-700">The signed file has been downloaded.</p>
+                  <button
+                    onClick={() => { setDone(false); setSigType(null); }}
+                    className="mt-3 px-4 py-2 rounded-lg text-xs font-medium border border-green-300 text-green-800 hover:bg-green-100 transition-colors"
+                  >
+                    Sign another page
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -486,10 +507,10 @@ export default function SignPdfPage() {
                       <div
                         className="absolute border-2 border-dashed border-primary/50 rounded pointer-events-none"
                         style={{
-                          left: `${(pageInfo.whitespace.x / (pageInfo.width / 2)) * 100}%`,
-                          bottom: `${(pageInfo.whitespace.y / (pageInfo.height / 2)) * 100}%`,
-                          width: `${(pageInfo.whitespace.width / (pageInfo.width / 2)) * 100}%`,
-                          height: `${(pageInfo.whitespace.height / (pageInfo.height / 2)) * 100}%`,
+                          left: `${(pageInfo.whitespace.x / pageInfo.pointWidth) * 100}%`,
+                          bottom: `${(pageInfo.whitespace.y / pageInfo.pointHeight) * 100}%`,
+                          width: `${(pageInfo.whitespace.width / pageInfo.pointWidth) * 100}%`,
+                          height: `${(pageInfo.whitespace.height / pageInfo.pointHeight) * 100}%`,
                           backgroundColor: 'rgba(99, 102, 241, 0.08)',
                         }}
                       />

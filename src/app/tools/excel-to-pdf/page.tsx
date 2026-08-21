@@ -6,16 +6,36 @@ export default function ExcelToPdfPage() {
   return (
     <ToolPage
       slug="excel-to-pdf"
-      accept=".xlsx,.xls,.csv"
+      accept=".xlsx,.csv"
       processLabel="Convert to PDF"
       onProcess={async (files) => {
         const file = files[0];
         const ext = file.name.split('.').pop()?.toLowerCase();
         const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib');
 
+        if (ext === 'xls') {
+          throw new Error('Legacy .xls files are not supported. Save the file as .xlsx in Excel and try again.');
+        }
+
+        // WinAnsi-safe sanitizer shared by the CSV and XLSX paths
+        const sanitizeCell = (val: string) => val
+          .replace(/[\x00-\x1F\x7F]/g, ' ')
+          .replace(/[\u{1F000}-\u{1FFFF}]/gu, '?')
+          .replace(/[\u{2600}-\u{27BF}]/gu, '-')
+          .replace(/[\u{FE00}-\u{FE0F}\u{200D}]/gu, '')
+          .replace(/[^\x20-\x7E\xA0-\xFF]/g, c => {
+            const code = c.charCodeAt(0);
+            if (code === 0x2013 || code === 0x2014) return '-';
+            if (code === 0x2026) return '...';
+            if (code === 0x2018 || code === 0x2019) return "'";
+            if (code === 0x201C || code === 0x201D) return '"';
+            return '';
+          })
+          .trim();
+
         if (ext === 'csv') {
           const text = await file.text();
-          const lines = text.split('\n');
+          const lines = text.split(/\r?\n/);
           const pdf = await PDFDocument.create();
           const font = await pdf.embedFont(StandardFonts.Courier);
           const A4_W = 595.28;
@@ -31,8 +51,8 @@ export default function ExcelToPdfPage() {
               page = pdf.addPage([A4_W, A4_H]);
               cursorY = A4_H - MARGIN;
             }
-            // Strip all control characters and non-Latin before drawing
-            const clean = line.replace(/[\x00-\x1F\x7F]/g, ' ').substring(0, 100);
+            let clean = sanitizeCell(line);
+            if (clean.length > 100) clean = clean.substring(0, 97) + '...';
             page.drawText(clean, {
               x: MARGIN,
               y: cursorY,
@@ -51,7 +71,11 @@ export default function ExcelToPdfPage() {
         const ExcelJS = (await import('exceljs')).default;
         const buf = await file.arrayBuffer();
         const workbook = new ExcelJS.Workbook();
-        await workbook.xlsx.load(buf);
+        try {
+          await workbook.xlsx.load(buf);
+        } catch {
+          throw new Error(`"${file.name}" could not be read as an Excel workbook. Make sure it is a valid .xlsx file.`);
+        }
 
         const A4_W = 595.28;
         const A4_H = 841.89;
@@ -67,7 +91,7 @@ export default function ExcelToPdfPage() {
         const font = await pdf.embedFont(StandardFonts.Helvetica);
         const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-        workbook.eachSheet((sheet, sheetId) => {
+        workbook.eachSheet((sheet) => {
           const rowCount = sheet.rowCount;
           const colCount = sheet.columnCount;
           if (rowCount === 0 || colCount === 0) return;
@@ -79,7 +103,9 @@ export default function ExcelToPdfPage() {
             let maxW = 30; // minimum width
             const col = sheet.getColumn(c);
             col.eachCell({ includeEmpty: false }, (cell) => {
-              const val = cell.value ? String(cell.value) : '';
+              // cell.text resolves formulas, rich text and hyperlinks to their
+              // displayed value (String(cell.value) prints "[object Object]").
+              const val = sanitizeCell(cell.text || '');
               const w = font.widthOfTextAtSize(val.substring(0, 30), 8);
               if (w > maxW) maxW = w;
             });
@@ -121,7 +147,7 @@ export default function ExcelToPdfPage() {
             let x = MARGIN_LEFT;
             for (let c = 0; c < maxCols; c++) {
               const cell = row.getCell(c + 1);
-              let val = cell.value !== null && cell.value !== undefined ? String(cell.value) : '';
+              const val = cell.text || '';
 
               const cellW = colWidths[c];
               const cellFont = isHeader ? fontBold : font;
@@ -150,25 +176,18 @@ export default function ExcelToPdfPage() {
                 borderWidth: 0.4,
               });
 
-              // Sanitize: strip ALL control chars, emoji, non-Latin, newlines
-              let displayVal = val
-                .replace(/[\x00-\x1F\x7F]/g, ' ')           // all control chars including \n \r \t
-                .replace(/[\u{1F000}-\u{1FFFF}]/gu, '?')     // emoji
-                .replace(/[\u{2600}-\u{27BF}]/gu, '-')        // misc symbols
-                .replace(/[\u{FE00}-\u{FE0F}\u{200D}]/gu, '') // variation selectors, ZWJ
-                .replace(/[^\x20-\x7E\xA0-\xFF]/g, c => {     // WinAnsi-safe
-                  const code = c.charCodeAt(0);
-                  if (code === 0x2013 || code === 0x2014) return '-';
-                  if (code === 0x2026) return '...';
-                  if (code === 0x2018 || code === 0x2019) return "'";
-                  if (code === 0x201C || code === 0x201D) return '"';
-                  return '';
-                })
-                .trim();
+              let displayVal = sanitizeCell(val);
+              const beforeFit = displayVal;
               while (displayVal && cellFont.widthOfTextAtSize(displayVal, fontSize) > cellW - 6 && displayVal.length > 1) {
                 displayVal = displayVal.slice(0, -1);
               }
-              if (displayVal !== val) displayVal += '...';
+              // Mark only genuine width truncation, and keep the marker inside the cell.
+              if (displayVal !== beforeFit) {
+                while (displayVal.length > 1 && cellFont.widthOfTextAtSize(displayVal + '...', fontSize) > cellW - 6) {
+                  displayVal = displayVal.slice(0, -1);
+                }
+                displayVal += '...';
+              }
 
               const textColor = isHeader ? rgb(1, 1, 1) : rgb(0.1, 0.1, 0.1);
               page.drawText(displayVal, {

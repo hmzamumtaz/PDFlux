@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import ToolPage from '@/components/ToolPage';
 import PdfPreview from '@/components/PdfPreview';
-import { extractPages, getPdfInfo } from '@/lib/pdf-engine';
+import { extractPages, getPdfInfo, parsePageSpec } from '@/lib/pdf-engine';
 
 export default function ExtractPagesPage() {
   const [pagesToExtract, setPagesToExtract] = useState('');
@@ -22,13 +22,13 @@ export default function ExtractPagesPage() {
     }
   }, []);
 
-  const parsePages = (input: string): number[] => {
-    return input.split(',').map(p => parseInt(p.trim())).filter(n => !isNaN(n) && n > 0);
-  };
-
   const extractedPages = useMemo(() => {
     if (!pdfInfo) return [];
-    return parsePages(pagesToExtract).filter(p => p <= pdfInfo.totalPages);
+    try {
+      return parsePageSpec(pagesToExtract, pdfInfo.totalPages);
+    } catch {
+      return [];
+    }
   }, [pdfInfo, pagesToExtract]);
 
   return (
@@ -41,7 +41,7 @@ export default function ExtractPagesPage() {
       options={
         <div>
           <label className="block text-sm font-medium text-foreground mb-2">
-            Pages to extract (comma-separated, e.g., 1, 3, 5)
+            Pages to extract (e.g., 1, 3, 5-8)
           </label>
           <input
             type="text"
@@ -65,8 +65,9 @@ export default function ExtractPagesPage() {
         </div>
       }
       onProcess={async (files) => {
-        const pages = parsePages(pagesToExtract);
-        if (pages.length === 0) throw new Error('Please enter pages to extract');
+        const info = await getPdfInfo(files[0]);
+        const pages = parsePageSpec(pagesToExtract, info.pageCount);
+        if (pages.length === 0) throw new Error('Please enter pages to extract (e.g., 1, 3, 5-8)');
         return extractPages(files[0], pages);
       }}
     />
