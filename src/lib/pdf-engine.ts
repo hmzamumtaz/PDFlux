@@ -920,6 +920,110 @@ export async function htmlToPdf(html: string): Promise<Blob> {
   return new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
 }
 
+/**
+ * Design-faithful HTML → PDF. The HTML is first RENDERED by the browser in a
+ * hidden sandboxed iframe (full CSS layout, colors, fonts, backgrounds), then
+ * that rendered design is rasterized with html2canvas and paginated into A4
+ * pages. This preserves the page's visual design exactly; use htmlToPdf for
+ * a text-reflow conversion with selectable text instead.
+ */
+export async function htmlToPdfVisual(
+  html: string,
+  onProgress?: (msg: string) => void,
+): Promise<Blob> {
+  const html2canvas = (await import('html2canvas')).default;
+
+  const A4_W = 595.28;
+  const A4_H = 841.89;
+  const MARGIN = 24; // slim print margin in points
+  const printableW = A4_W - MARGIN * 2;
+  const printableH = A4_H - MARGIN * 2;
+  // Lay out at A4 width in CSS pixels (96 dpi) so the design paginates like print.
+  const CSS_WIDTH = Math.round((printableW / 72) * 96); // ≈ 730px
+
+  onProgress?.('Rendering HTML design...');
+
+  // Sandbox without allow-scripts: the document lays out with full CSS but
+  // cannot run JS; allow-same-origin lets html2canvas read the DOM.
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('sandbox', 'allow-same-origin');
+  iframe.style.cssText = `position:fixed;left:-10000px;top:0;width:${CSS_WIDTH}px;height:1000px;border:0;visibility:hidden;`;
+  const isFullDoc = /<html[\s>]/i.test(html);
+  iframe.srcdoc = isFullDoc
+    ? html
+    : `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#fff;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;line-height:1.5;color:#111">${html}</body></html>`;
+
+  document.body.appendChild(iframe);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Timed out rendering the HTML.')), 20000);
+      iframe.onload = () => { clearTimeout(timer); resolve(); };
+    });
+
+    const idoc = iframe.contentDocument;
+    if (!idoc || !idoc.body) throw new Error('Could not render the HTML content.');
+
+    // Wait for fonts and images inside the frame so the capture is complete.
+    try { await (idoc as any).fonts?.ready; } catch { /* older browsers */ }
+    const images = Array.from(idoc.images || []);
+    await Promise.all(images.map(img => img.complete ? Promise.resolve() : new Promise<void>(res => {
+      img.onload = () => res();
+      img.onerror = () => res();
+      setTimeout(() => res(), 8000);
+    })));
+
+    const contentHeight = Math.max(idoc.body.scrollHeight, idoc.documentElement?.scrollHeight || 0, 1);
+    iframe.style.height = `${contentHeight}px`;
+
+    onProgress?.('Capturing the rendered design...');
+    // Cap capture scale so very long documents don't exhaust canvas memory.
+    const pageHeightPx = CSS_WIDTH * (printableH / printableW);
+    const scale = Math.min(2, 16000 / Math.max(contentHeight, 1));
+    const canvas = await html2canvas(idoc.body, {
+      width: CSS_WIDTH,
+      windowWidth: CSS_WIDTH,
+      height: contentHeight,
+      scale,
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      logging: false,
+    });
+
+    onProgress?.('Building PDF pages...');
+    const pdf = await PDFDocument.create();
+    const sliceHeightPx = Math.floor(pageHeightPx * scale);
+    const totalPages = Math.max(1, Math.ceil(canvas.height / sliceHeightPx));
+
+    for (let p = 0; p < totalPages; p++) {
+      const sliceY = p * sliceHeightPx;
+      const sliceH = Math.min(sliceHeightPx, canvas.height - sliceY);
+      if (sliceH <= 0) break;
+
+      const slice = document.createElement('canvas');
+      slice.width = canvas.width;
+      slice.height = sliceH;
+      const sctx = slice.getContext('2d')!;
+      sctx.fillStyle = '#ffffff';
+      sctx.fillRect(0, 0, slice.width, slice.height);
+      sctx.drawImage(canvas, 0, sliceY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+
+      const img = await pdf.embedJpg(canvasToJpgBytes(slice, 0.92));
+      const drawnH = (sliceH / (pageHeightPx * scale)) * printableH;
+      const page = pdf.addPage([A4_W, A4_H]);
+      page.drawImage(img, {
+        x: MARGIN,
+        y: A4_H - MARGIN - drawnH,
+        width: printableW,
+        height: drawnH,
+      });
+    }
+
+    return toBlob(await pdf.save());
+  } finally {
+    iframe.remove();
+  }
+}
+
 export async function wordToPdf(file: File): Promise<Blob> {
   const { default: mammoth } = await import('mammoth');
   const buf = await readFileAsArrayBuffer(file);
