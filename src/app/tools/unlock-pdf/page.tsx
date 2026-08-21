@@ -4,7 +4,7 @@ import { useState, useCallback, useRef } from 'react';
 import { ArrowLeft, Loader2, Unlock, AlertCircle, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
-import { isPdfPasswordProtected, unlockPdf, downloadBlob } from '@/lib/pdf-engine';
+import { isPdfPasswordProtected, unlockPdf, downloadBlob, getOutputFilename } from '@/lib/pdf-engine';
 
 export default function UnlockPdfPage() {
   const [files, setFiles] = useState<File[]>([]);
@@ -45,7 +45,7 @@ export default function UnlockPdfPage() {
     setError(null);
     try {
       const blob = await unlockPdf(fileRef.current, password);
-      downloadBlob(blob, fileRef.current.name.replace(/\.pdf$/i, '_unlocked.pdf'));
+      downloadBlob(blob, getOutputFilename('unlock-pdf', '.pdf'));
       setDone(true);
     } catch (err: any) {
       const msg = err.message || '';

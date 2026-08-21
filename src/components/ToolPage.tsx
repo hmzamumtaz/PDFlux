@@ -6,7 +6,7 @@ import * as LucideIcons from 'lucide-react';
 import Link from 'next/link';
 import { getToolBySlug } from '@/lib/tools-data';
 import FileUpload from './FileUpload';
-import { downloadBlob, renderPdfPages } from '@/lib/pdf-engine';
+import { downloadBlob, renderPdfPages, getOutputFilename } from '@/lib/pdf-engine';
 
 interface ToolPageProps {
   slug: string;
@@ -326,7 +326,7 @@ export default function ToolPage({
       'text/markdown': '.md', 'text/plain': '.txt', 'text/html': '.html',
     };
     const ext = extMap[result.result.type] || (result.result.type.startsWith('image/') ? '.jpg' : '.bin');
-    downloadBlob(result.result, `${result.sourceFile.name.replace(/\.pdf$/i, '')}${ext}`);
+    downloadBlob(result.result, getOutputFilename(slug, ext));
   }, []);
 
   const handleDeleteResult = useCallback((index: number) => {

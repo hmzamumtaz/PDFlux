@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { ArrowLeft, Loader2, Lock, AlertCircle, Check, Download, Trash2, FileDown, List, LayoutGrid, ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
-import { protectPdf, downloadBlob, renderPdfPages } from '@/lib/pdf-engine';
+import { protectPdf, downloadBlob, renderPdfPages, getOutputFilename } from '@/lib/pdf-engine';
 
 interface FilePassword {
   file: File;
@@ -192,7 +192,7 @@ export default function ProtectPdfPage() {
   }, [files, getFilePassword, allowPrinting, allowModifying, allowCopying, allowAnnotating, allowFillingForms, allowExtraction, allowAssembly]);
 
   const handleDownloadResult = useCallback((r: ProcessedResult) => {
-    downloadBlob(r.result, r.sourceFile.name.replace(/\.pdf$/i, '_protected.pdf'));
+    downloadBlob(r.result, getOutputFilename('protect-pdf', '.pdf'));
   }, []);
 
   const handleDeleteResult = useCallback((index: number) => {
@@ -200,7 +200,7 @@ export default function ProtectPdfPage() {
   }, []);
 
   const handleDownloadAll = useCallback(() => {
-    results.forEach(r => downloadBlob(r.result, r.sourceFile.name.replace(/\.pdf$/i, '_protected.pdf')));
+    results.forEach(r => downloadBlob(r.result, getOutputFilename('protect-pdf', '.pdf')));
   }, [results]);
 
   const handleReset = useCallback(() => {

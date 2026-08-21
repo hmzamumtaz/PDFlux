@@ -4,6 +4,13 @@
 import { PDFDocument, degrees, rgb, StandardFonts } from 'pdf-lib';
 import { saveAs } from 'file-saver';
 
+export function getOutputFilename(slug: string, ext: string): string {
+  const now = new Date();
+  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const label = slug.replace(/-/g, '_');
+  return `PDFlux_${label}_${date}${ext}`;
+}
+
 export async function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
   return file.arrayBuffer();
 }

@@ -5,7 +5,7 @@ import { ArrowLeft, Download, Loader2, Check, AlertCircle, PenTool, Type, Upload
 import Link from 'next/link';
 import { getToolBySlug } from '@/lib/tools-data';
 import FileUpload from '@/components/FileUpload';
-import { readFileAsArrayBuffer, loadPdf, downloadBlob, renderPdfPages, scanPageFooterWhitespace, type FooterWhitespaceResult } from '@/lib/pdf-engine';
+import { readFileAsArrayBuffer, loadPdf, downloadBlob, renderPdfPages, scanPageFooterWhitespace, getOutputFilename, type FooterWhitespaceResult } from '@/lib/pdf-engine';
 
 type SigType = 'draw' | 'type' | 'upload';
 
@@ -245,7 +245,7 @@ export default function SignPdfPage() {
       }
 
       const bytes = await src.save();
-      downloadBlob(new Blob([bytes as any], { type: 'application/pdf' }), 'signed.pdf');
+      downloadBlob(new Blob([bytes as any], { type: 'application/pdf' }), getOutputFilename('sign-pdf', '.pdf'));
       setDone(true);
     } catch (err: any) {
       setError(err.message || 'Failed to sign PDF');

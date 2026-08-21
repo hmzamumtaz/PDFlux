@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import { ArrowLeft, Loader2, FileDown, AlertCircle, CheckCircle2, ScanText, X } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
-import { ocrPdf, OcrResult, downloadBlob } from '@/lib/pdf-engine';
+import { ocrPdf, OcrResult, downloadBlob, getOutputFilename } from '@/lib/pdf-engine';
 
 const LANGUAGES = [
   { code: 'eng', name: 'English' }, { code: 'ara', name: 'Arabic' }, { code: 'ben', name: 'Bengali' },
@@ -76,7 +76,7 @@ export default function OcrPdfPage() {
 
   const handleDownload = useCallback(() => {
     if (!result) return;
-    downloadBlob(result.blob, files[0].name.replace(/\.pdf$/i, '_ocr.pdf'));
+    downloadBlob(result.blob, getOutputFilename('ocr-pdf', '.pdf'));
   }, [result, files]);
 
   return (
