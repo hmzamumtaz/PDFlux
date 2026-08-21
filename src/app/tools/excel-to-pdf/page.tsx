@@ -148,8 +148,15 @@ export default function ExcelToPdfPage() {
                 borderWidth: 0.4,
               });
 
-              // Truncate text to fit cell
-              let displayVal = val;
+              // Truncate text to fit cell, strip newlines and non-Latin chars
+              let displayVal = val.replace(/[\r\n]+/g, ' ').replace(/[\u{1F000}-\u{1FFFF}]/gu, '?').replace(/[^\x20-\x7E\xA0-\xFF]/g, c => {
+                const code = c.charCodeAt(0);
+                if (code >= 0x20 && code <= 0x7E) return c;
+                if (code >= 0xA0 && code <= 0xFF) return c;
+                if (code === 0x2013 || code === 0x2014) return '-';
+                if (code === 0x2026) return '...';
+                return '';
+              });
               while (displayVal && cellFont.widthOfTextAtSize(displayVal, fontSize) > cellW - 6 && displayVal.length > 1) {
                 displayVal = displayVal.slice(0, -1);
               }

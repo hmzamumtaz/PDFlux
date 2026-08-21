@@ -40,6 +40,26 @@ export default function WordToPdfPage() {
         const fontItalic = await pdf.embedFont(StandardFonts.HelveticaOblique);
         const fontBoldItalic = await pdf.embedFont(StandardFonts.HelveticaBoldOblique);
 
+        // WinAnsi only supports Latin-1. Strip emoji, CJK, symbols, etc.
+        function sanitize(text: string): string {
+          return text.replace(/[\u{1F000}-\u{1FFFF}]/gu, '\u2022') // emoji ranges → bullet
+            .replace(/[\u{2600}-\u{27BF}]/gu, '-') // misc symbols → dash
+            .replace(/[\u{FE00}-\u{FE0F}]/gu, '') // variation selectors
+            .replace(/[\u{200D}]/gu, '') // zero-width joiner
+            .replace(/[^\x20-\x7E\xA0-\xFF]/g, c => {
+              // Keep basic Latin + Latin-1 Supplement, replace everything else
+              const code = c.charCodeAt(0);
+              if (code >= 0x20 && code <= 0x7E) return c; // basic ASCII
+              if (code >= 0xA0 && code <= 0xFF) return c; // Latin-1 Supplement
+              // Common Unicode dashes/bullets
+              if (code === 0x2013 || code === 0x2014) return '-';
+              if (code === 0x2018 || code === 0x2019 || code === 0x201C || code === 0x201D) return '"';
+              if (code === 0x2022 || code === 0x2023) return '\u2022';
+              if (code === 0x2026) return '...';
+              return '?';
+            });
+        }
+
         function checkPage(needed: number) {
           if (cursorY - needed < MARGIN_BOTTOM) {
             page = pdf.addPage([A4_W, A4_H]);
@@ -49,7 +69,8 @@ export default function WordToPdfPage() {
 
         function drawText(text: string, fontSize: number, isBold: boolean, isItalic: boolean, indent: number = 0) {
           const f = isBold && isItalic ? fontBoldItalic : isBold ? fontBold : isItalic ? fontItalic : font;
-          const lines = wrapText(text, f, fontSize, USABLE_W - indent);
+          const clean = sanitize(text);
+          const lines = wrapText(clean, f, fontSize, USABLE_W - indent);
           for (const line of lines) {
             checkPage(LINE_HEIGHT);
             page.drawText(line, {

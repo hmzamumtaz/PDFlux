@@ -38,6 +38,19 @@ export default function PowerPointToPdfPage() {
         const helvetica = await pdf.embedFont(StandardFonts.Helvetica);
         const helveticaBold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
+        function sanitize(text: string): string {
+          return text.replace(/[\u{1F000}-\u{1FFFF}]/gu, '?')
+            .replace(/[\u{2600}-\u{27BF}]/gu, '-')
+            .replace(/[^\x20-\x7E\xA0-\xFF]/g, c => {
+              const code = c.charCodeAt(0);
+              if (code >= 0x20 && code <= 0x7E) return c;
+              if (code >= 0xA0 && code <= 0xFF) return c;
+              if (code === 0x2013 || code === 0x2014) return '-';
+              if (code === 0x2026) return '...';
+              return '';
+            });
+        }
+
         for (const slideFile of slideFiles) {
           const slideXml = await zip.file(`ppt/slides/${slideFile}`)?.async('text');
           if (!slideXml) continue;
@@ -100,8 +113,9 @@ export default function PowerPointToPdfPage() {
 
                 // Text content
                 const tMatch = runXml.match(/<a:t>([^<]*)<\/a:t>/);
-                const text = tMatch ? tMatch[1] : '';
-                if (!text) continue;
+                const rawText = tMatch ? tMatch[1] : '';
+                if (!rawText) continue;
+                const text = sanitize(rawText);
 
                 const f = isBold ? helveticaBold : helvetica;
                 const pdfFontSize = Math.min(fontSize, 24); // Cap for readability
