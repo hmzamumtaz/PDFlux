@@ -187,7 +187,7 @@ export default function ExcelToPdfPage() {
           }
 
           // Sheet footer
-          page.drawText(`Sheet: ${sheet.name} | Rows: ${Math.min(rowCount, maxRows)}${rowCount > maxRows ? ` (showing first ${maxRows})` : ''}`, {
+          page.drawText(`Sheet: ${safeSheetName} | Rows: ${Math.min(rowCount, maxRows)}${rowCount > maxRows ? ` (showing first ${maxRows})` : ''}`, {
             x: MARGIN_LEFT,
             y: MARGIN_BOTTOM - 10,
             size: 7,

@@ -326,80 +326,257 @@ export async function pdfToImages(file: File): Promise<Blob[]> {
 }
 
 export async function htmlToPdf(html: string): Promise<Blob> {
-  const { default: html2canvas } = await import('html2canvas');
-  const { jsPDF } = await import('jspdf');
+  const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib');
 
   const A4_W = 595.28;
   const A4_H = 841.89;
-  const MARGIN = 0;
+  const ML = 54, MR = 54, MT = 60, MB = 60;
+  const USABLE_W = A4_W - ML - MR;
+  const LH = 14;
 
-  const renderToCanvas = async (content: string) => {
-    const container = document.createElement('div');
-    container.innerHTML = content;
-    container.style.width = '800px';
-    container.style.padding = '40px';
-    container.style.position = 'fixed';
-    container.style.left = '-9999px';
-    container.style.top = '0';
-    container.style.background = 'white';
-    document.body.appendChild(container);
-    try {
-      const canvas = await html2canvas(container, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-      return canvas;
-    } finally {
-      document.body.removeChild(container);
-    }
-  };
+  const pdf = await PDFDocument.create();
+  let page = pdf.addPage([A4_W, A4_H]);
+  let cursorY = A4_H - MT;
 
-  let canvas: HTMLCanvasElement;
-  try {
-    canvas = await renderToCanvas(html);
-  } catch {
-    const cleaned = html.replace(/\b(lab|lch|oklab|oklch|color-mix|hwb|hsl|rgb)\([^)]*\)/gi, '#888');
-    canvas = await renderToCanvas(cleaned);
+  const fRegular = await pdf.embedFont(StandardFonts.Helvetica);
+  const fBold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const fItalic = await pdf.embedFont(StandardFonts.HelveticaOblique);
+  const fBoldItalic = await pdf.embedFont(StandardFonts.HelveticaBoldOblique);
+  const fCourier = await pdf.embedFont(StandardFonts.Courier);
+
+  // WinAnsi sanitize
+  function san(text: string): string {
+    return text
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ')
+      .replace(/[\u{1F000}-\u{1FFFF}]/gu, '?')
+      .replace(/[\u{2600}-\u{27BF}]/gu, '-')
+      .replace(/[^\x20-\x7E\xA0-\xFF]/g, c => {
+        const code = c.charCodeAt(0);
+        if (code === 0x2013 || code === 0x2014) return '-';
+        if (code === 0x2018 || code === 0x2019) return "'";
+        if (code === 0x201C || code === 0x201D) return '"';
+        if (code === 0x2026) return '...';
+        if (code === 0x2022 || code === 0x2023) return '\u2022';
+        return '';
+      });
   }
 
-  const imgData = canvas.toDataURL('image/png');
-  const imgWidth = A4_W;
-  const totalImgHeight = (canvas.height * imgWidth) / canvas.width;
-
-  const pdf = new jsPDF('p', 'pt', 'a4');
-
-  if (totalImgHeight <= A4_H) {
-    // Fits on one page
-    pdf.addImage(imgData, 'PNG', MARGIN, MARGIN, imgWidth - MARGIN * 2, totalImgHeight);
-  } else {
-    // Multi-page: slice the canvas into page-sized chunks
-    const pageImgHeight = A4_H;
-    const sourcePageHeight = (canvas.height * (A4_W / canvas.width)); // in PDF pts per source canvas px
-    const sourceSliceHeight = canvas.height / totalImgHeight * A4_H; // source canvas pixels per PDF page
-
-    let remainingHeight = canvas.height;
-    let sourceY = 0;
-    let isFirstPage = true;
-
-    while (remainingHeight > 0) {
-      if (!isFirstPage) pdf.addPage();
-
-      const sliceH = Math.min(sourceSliceHeight, remainingHeight);
-      // Create a temporary canvas for this slice
-      const sliceCanvas = document.createElement('canvas');
-      sliceCanvas.width = canvas.width;
-      sliceCanvas.height = Math.ceil(sliceH);
-      const sliceCtx = sliceCanvas.getContext('2d')!;
-      sliceCtx.drawImage(canvas, 0, sourceY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
-
-      const sliceData = sliceCanvas.toDataURL('image/png');
-      const slicePdfH = (sliceH * A4_W) / canvas.width;
-      pdf.addImage(sliceData, 'PNG', MARGIN, MARGIN, A4_W - MARGIN * 2, slicePdfH);
-
-      sourceY += sliceH;
-      remainingHeight -= sliceH;
-      isFirstPage = false;
+  function checkPage(needed: number) {
+    if (cursorY - needed < MB) {
+      page = pdf.addPage([A4_W, A4_H]);
+      cursorY = A4_H - MT;
     }
   }
 
-  return new Blob([pdf.output('arraybuffer')], { type: 'application/pdf' });
+  function wrapText(text: string, f: any, size: number, maxW: number): string[] {
+    if (!text) return [''];
+    const words = text.split(/\s+/);
+    const lines: string[] = [];
+    let current = '';
+    for (const word of words) {
+      const test = current ? current + ' ' + word : word;
+      if (f.widthOfTextAtSize(test, size) > maxW && current) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = test;
+      }
+    }
+    if (current) lines.push(current);
+    return lines.length ? lines : [''];
+  }
+
+  function drawLine(text: string, fontSize: number, isBold: boolean, isItalic: boolean, indent: number = 0, useCourier: boolean = false) {
+    const clean = san(text);
+    const f = useCourier ? fCourier : isBold && isItalic ? fBoldItalic : isBold ? fBold : isItalic ? fItalic : fRegular;
+    const lines = wrapText(clean, f, fontSize, USABLE_W - indent);
+    for (const line of lines) {
+      checkPage(LH);
+      page.drawText(line, { x: ML + indent, y: cursorY, size: fontSize, font: f, color: rgb(0.1, 0.1, 0.1) });
+      cursorY -= LH;
+    }
+  }
+
+  function processTable(tableEl: HTMLElement) {
+    const rows = tableEl.querySelectorAll(':scope > tbody > tr, :scope > tr, :scope > thead > tr');
+    if (rows.length === 0) return;
+
+    const allRows: string[][] = [];
+    rows.forEach(tr => {
+      const cells = tr.querySelectorAll(':scope > td, :scope > th');
+      const row: string[] = [];
+      cells.forEach(td => row.push(san(td.textContent?.trim() || '')));
+      allRows.push(row);
+    });
+
+    const maxCols = Math.max(...allRows.map(r => r.length));
+    const colW = USABLE_W / maxCols;
+    const rowH = 18;
+
+    for (let ri = 0; ri < allRows.length; ri++) {
+      const row = allRows[ri];
+      const isHeader = ri === 0;
+      checkPage(rowH);
+
+      for (let c = 0; c < maxCols; c++) {
+        const cellText = row[c] || '';
+        const x = ML + c * colW;
+
+        if (isHeader) {
+          page.drawRectangle({ x, y: cursorY - 3, width: colW, height: rowH, color: rgb(0.9, 0.92, 0.96) });
+        } else if (ri % 2 === 0) {
+          page.drawRectangle({ x, y: cursorY - 3, width: colW, height: rowH, color: rgb(0.97, 0.97, 0.97) });
+        }
+        page.drawRectangle({ x, y: cursorY - 3, width: colW, height: rowH, borderColor: rgb(0.8, 0.8, 0.8), borderWidth: 0.5 });
+
+        const cellFont = isHeader ? fBold : fRegular;
+        const cellLines = wrapText(cellText, cellFont, 9, colW - 6);
+        page.drawText(cellLines[0] || '', { x: x + 3, y: cursorY + 2, size: 9, font: cellFont, color: isHeader ? rgb(0.15, 0.25, 0.5) : rgb(0.1, 0.1, 0.1) });
+      }
+      cursorY -= rowH;
+    }
+  }
+
+  function getInlineText(el: HTMLElement, forceBold = false, forceItalic = false): { text: string; bold: boolean; italic: boolean }[] {
+    const frags: { text: string; bold: boolean; italic: boolean }[] = [];
+    for (const child of el.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        const t = child.textContent || '';
+        if (t) frags.push({ text: t, bold: forceBold, italic: forceItalic });
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        const childEl = child as HTMLElement;
+        const tag = childEl.tagName.toLowerCase();
+        const b = forceBold || tag === 'strong' || tag === 'b';
+        const it = forceItalic || tag === 'em' || tag === 'i';
+        if (tag === 'br') {
+          frags.push({ text: '\n', bold: false, italic: false });
+        } else {
+          frags.push(...getInlineText(childEl, b, it));
+        }
+      }
+    }
+    return frags;
+  }
+
+  function drawInline(el: HTMLElement, indent: number = 0) {
+    const frags = getInlineText(el);
+    let currentLine = '';
+    let lineBold = false;
+    let lineItalic = false;
+
+    for (const frag of frags) {
+      const cleanFrag = san(frag.text);
+      if (cleanFrag.includes('\n')) {
+        const parts = cleanFrag.split('\n');
+        for (let i = 0; i < parts.length; i++) {
+          if (parts[i]) { currentLine += parts[i]; lineBold = frag.bold; lineItalic = frag.italic; }
+          if (i < parts.length - 1) {
+            if (currentLine.trim()) drawLine(currentLine, 11, lineBold, lineItalic, indent);
+            currentLine = '';
+            checkPage(LH);
+          }
+        }
+      } else {
+        currentLine += cleanFrag;
+        lineBold = frag.bold;
+        lineItalic = frag.italic;
+      }
+    }
+    if (currentLine.trim()) drawLine(currentLine, 11, lineBold, lineItalic, indent);
+  }
+
+  async function processNode(node: HTMLElement | ChildNode, indent: number = 0) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent || '';
+      if (text.trim()) drawLine(text, 11, false, false, indent);
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const el = node as HTMLElement;
+    const tag = el.tagName.toLowerCase();
+
+    switch (tag) {
+      case 'h1': checkPage(28); cursorY -= 8; drawLine(el.textContent || '', 22, true, false, indent); cursorY -= 4; break;
+      case 'h2': checkPage(24); cursorY -= 6; drawLine(el.textContent || '', 18, true, false, indent); cursorY -= 3; break;
+      case 'h3': checkPage(20); cursorY -= 4; drawLine(el.textContent || '', 15, true, false, indent); cursorY -= 2; break;
+      case 'h4': case 'h5': case 'h6': checkPage(18); cursorY -= 3; drawLine(el.textContent || '', 13, true, false, indent); cursorY -= 2; break;
+      case 'p': case 'div': checkPage(LH); cursorY -= 4; drawInline(el, indent); cursorY -= 2; break;
+      case 'strong': case 'b': drawInline(el, indent); break;
+      case 'em': case 'i': drawInline(el, indent); break;
+      case 'br': checkPage(LH); cursorY -= LH; break;
+      case 'ul': case 'ol':
+        cursorY -= 3;
+        const items = el.querySelectorAll(':scope > li');
+        items.forEach((li, idx) => {
+          const bullet = tag === 'ol' ? `${idx + 1}. ` : '\u2022 ';
+          checkPage(LH);
+          const liText = san(li.textContent || '');
+          const f = fRegular;
+          const bulletW = f.widthOfTextAtSize(bullet, 11);
+          page.drawText(bullet, { x: ML + indent, y: cursorY, size: 11, font: f, color: rgb(0.1, 0.1, 0.1) });
+          const lines = wrapText(liText, f, 11, USABLE_W - indent - 16);
+          for (const line of lines) {
+            checkPage(LH);
+            page.drawText(line, { x: ML + indent + 16, y: cursorY, size: 11, font: f, color: rgb(0.1, 0.1, 0.1) });
+            cursorY -= LH;
+          }
+        });
+        cursorY -= 2;
+        break;
+      case 'table': cursorY -= 4; processTable(el); cursorY -= 4; break;
+      case 'blockquote': cursorY -= 3; drawInline(el, indent + 20); cursorY -= 3; break;
+      case 'pre': case 'code':
+        cursorY -= 3;
+        const codeText = san(el.textContent || '');
+        const codeLines = codeText.split('\n');
+        for (const cl of codeLines) {
+          checkPage(LH);
+          page.drawText(cl.substring(0, 90), { x: ML + indent + 10, y: cursorY, size: 9, font: fCourier, color: rgb(0.15, 0.15, 0.15) });
+          cursorY -= LH;
+        }
+        cursorY -= 3;
+        break;
+      case 'hr':
+        checkPage(10); cursorY -= 5;
+        page.drawLine({ start: { x: ML + indent, y: cursorY }, end: { x: A4_W - MR, y: cursorY }, thickness: 1, color: rgb(0.7, 0.7, 0.7) });
+        cursorY -= 8;
+        break;
+      case 'img': {
+        const src = el.getAttribute('src');
+        if (src && src.startsWith('data:image/')) {
+          try {
+            const [header, data] = src.split(',');
+            const mime = header.match(/data:(image\/\w+)/)?.[1];
+            const imgBytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+            let img;
+            if (mime === 'image/png') img = await pdf.embedPng(imgBytes);
+            else if (mime === 'image/jpeg' || mime === 'image/jpg') img = await pdf.embedJpg(imgBytes);
+            if (img) {
+              const scale = Math.min(USABLE_W / img.width, 200 / img.height, 1);
+              const w = img.width * scale;
+              const h = img.height * scale;
+              checkPage(h);
+              page.drawImage(img, { x: ML + indent, y: cursorY - h, width: w, height: h });
+              cursorY -= h + 4;
+            }
+          } catch { /* skip broken images */ }
+        }
+        break;
+      }
+      default:
+        // Process children for unknown tags
+        for (const child of el.childNodes) await processNode(child, indent);
+    }
+  }
+
+  // Parse and process
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<div>${html}</div>`, 'text/html');
+  const container = doc.body.firstChild as HTMLElement;
+  for (const child of container.childNodes) await processNode(child);
+
+  const bytes = await pdf.save();
+  return new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
 }
 
 export async function wordToPdf(file: File): Promise<Blob> {
