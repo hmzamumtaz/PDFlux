@@ -6,6 +6,9 @@ import type { Cell, Worksheet } from 'exceljs';
 
 const MAX_ROWS_PER_SHEET = 3000;
 const MAX_COLS_PER_SHEET = 64;
+// Below this fit factor an 11pt cell becomes unreadable — widths keep scaling,
+// but font sizes are floored so the text stays legible (content wraps instead).
+const MIN_READABLE_FONT_PX = 6.5;
 // Printable widths in CSS px inside htmlToPdfVisual (A4 minus margins @96dpi, minus body padding)
 const PORTRAIT_PX = 698;
 const LANDSCAPE_PX = 1027;
@@ -32,6 +35,12 @@ function borderSide(side: any): string | null {
   if (!side?.style) return null;
   const css = BORDER_CSS[side.style] || '1px solid';
   return `${css} ${argbToCss(side.color) || '#000'}`;
+}
+
+function cellDisplayString(cell: Cell): string {
+  const v: any = (cell.value as any)?.result !== undefined ? (cell.value as any).result : cell.value;
+  if (v === null || v === undefined) return '';
+  return String(cell.text ?? v).trim();
 }
 
 // Apply the essentials of the cell's number format so values read like Excel shows them.
@@ -71,60 +80,139 @@ function formatCellValue(cell: Cell): string {
   return cell.text ?? String(v);
 }
 
-interface MergeInfo { rowSpan: number; colSpan: number }
+interface MergeRange { r1: number; c1: number; r2: number; c2: number }
 
-function getMerges(sheet: Worksheet): { masters: Map<string, MergeInfo>; covered: Set<string> } {
-  const masters = new Map<string, MergeInfo>();
-  const covered = new Set<string>();
+function parseMerges(sheet: Worksheet): MergeRange[] {
+  const out: MergeRange[] = [];
   const merges: string[] = ((sheet as any).model?.merges as string[]) || [];
   const colNum = (letters: string) => letters.split('').reduce((acc, ch) => acc * 26 + (ch.charCodeAt(0) - 64), 0);
   for (const range of merges) {
     const m = range.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
     if (!m) continue;
-    const c1 = colNum(m[1]), r1 = parseInt(m[2], 10), c2 = colNum(m[3]), r2 = parseInt(m[4], 10);
-    masters.set(`${r1},${c1}`, { rowSpan: r2 - r1 + 1, colSpan: c2 - c1 + 1 });
-    for (let r = r1; r <= r2; r++) {
-      for (let c = c1; c <= c2; c++) {
-        if (r !== r1 || c !== c1) covered.add(`${r},${c}`);
-      }
-    }
+    out.push({ c1: colNum(m[1]), r1: parseInt(m[2], 10), c2: colNum(m[3]), r2: parseInt(m[4], 10) });
   }
-  return { masters, covered };
+  return out;
+}
+
+export interface UsedRange { r1: number; r2: number; c1: number; c2: number }
+
+/**
+ * The rectangle of cells that actually CONTAIN data. Spreadsheets often carry
+ * styling (borders, fills) across thousands of empty cells — Excel's declared
+ * dimensions include those, which is what produced giant empty grids. Only
+ * cells with a real value count, then the box is expanded to keep any merged
+ * ranges it touches intact.
+ */
+function getUsedRange(sheet: Worksheet, merges: MergeRange[]): UsedRange | null {
+  let r1 = Infinity, r2 = 0, c1 = Infinity, c2 = 0;
+  sheet.eachRow({ includeEmpty: false }, (row, rn) => {
+    row.eachCell({ includeEmpty: false }, (cell, cn) => {
+      if (cellDisplayString(cell) !== '') {
+        if (rn < r1) r1 = rn;
+        if (rn > r2) r2 = rn;
+        if (cn < c1) c1 = cn;
+        if (cn > c2) c2 = cn;
+      }
+    });
+  });
+  if (r2 === 0) return null;
+
+  // Expand to fully include any merge intersecting the box (stable in a few passes).
+  for (let pass = 0; pass < 5; pass++) {
+    let changed = false;
+    for (const m of merges) {
+      const intersects = m.r1 <= r2 && m.r2 >= r1 && m.c1 <= c2 && m.c2 >= c1;
+      if (!intersects) continue;
+      if (m.r1 < r1) { r1 = m.r1; changed = true; }
+      if (m.r2 > r2) { r2 = m.r2; changed = true; }
+      if (m.c1 < c1) { c1 = m.c1; changed = true; }
+      if (m.c2 > c2) { c2 = m.c2; changed = true; }
+    }
+    if (!changed) break;
+  }
+
+  r2 = Math.min(r2, r1 + MAX_ROWS_PER_SHEET - 1);
+  c2 = Math.min(c2, c1 + MAX_COLS_PER_SHEET - 1);
+  return { r1, r2, c1, c2 };
+}
+
+function visibleColumns(sheet: Worksheet, range: UsedRange): { cols: number[]; widths: number[] } {
+  const cols: number[] = [];
+  const widths: number[] = [];
+  for (let c = range.c1; c <= range.c2; c++) {
+    const col = sheet.getColumn(c);
+    if (col?.hidden) continue;
+    cols.push(c);
+    widths.push(((col?.width ?? 8.43) * 7) + 5); // Excel width units → px
+  }
+  return { cols, widths };
+}
+
+function sheetNaturalWidth(sheet: Worksheet, range: UsedRange): number {
+  return visibleColumns(sheet, range).widths.reduce((a, b) => a + b, 0);
 }
 
 /**
- * Reproduce one worksheet as styled HTML: real column widths, row heights,
- * merged cells, fills, fonts, borders, alignment and number formats — then the
- * browser renders it and the visual pipeline turns that into the PDF.
- * `fit` scales everything down uniformly (Excel's "fit to page width").
+ * Reproduce the worksheet's DATA AREA as styled HTML: real column widths, row
+ * heights, merged cells, fills, fonts, borders, alignment and number formats.
+ * Rows/columns outside the used range are skipped entirely; runs of empty rows
+ * inside it collapse to one slim spacer. `fit` scales widths down to the page
+ * (Excel's "fit to page width") while font sizes are floored to stay readable.
  */
-function sheetToHtml(sheet: Worksheet, fit: number): string {
-  const rowCount = Math.min(sheet.rowCount, MAX_ROWS_PER_SHEET);
-  const colCount = Math.min(sheet.columnCount || 1, MAX_COLS_PER_SHEET);
-  const { masters, covered } = getMerges(sheet);
+function sheetToHtml(sheet: Worksheet, range: UsedRange, fit: number): string {
+  const merges = parseMerges(sheet);
+  const masters = new Map<string, { rowSpan: number; colSpan: number }>();
+  const covered = new Set<string>();
+  const rowsInMerges = new Set<number>();
+  for (const m of merges) {
+    masters.set(`${m.r1},${m.c1}`, {
+      rowSpan: Math.min(m.r2, range.r2) - m.r1 + 1,
+      colSpan: Math.min(m.c2, range.c2) - m.c1 + 1,
+    });
+    for (let r = m.r1; r <= m.r2; r++) {
+      rowsInMerges.add(r);
+      for (let c = m.c1; c <= m.c2; c++) {
+        if (r !== m.r1 || c !== m.c1) covered.add(`${r},${c}`);
+      }
+    }
+  }
+
   const showGrid = sheet.views?.[0]?.showGridLines !== false;
   const px = (n: number) => `${Math.max(1, Math.round(n * fit * 10) / 10)}px`;
+  const { cols, widths } = visibleColumns(sheet, range);
+  if (cols.length === 0) return '';
 
-  const visibleCols: number[] = [];
-  const colWidths: number[] = [];
-  for (let c = 1; c <= colCount; c++) {
-    const col = sheet.getColumn(c);
-    if (col?.hidden) continue;
-    visibleCols.push(c);
-    colWidths.push(((col?.width ?? 8.43) * 7) + 5); // Excel width units → px
-  }
-  if (visibleCols.length === 0) return '';
+  const rowIsEmpty = (r: number): boolean => {
+    if (rowsInMerges.has(r)) return false;
+    const row = sheet.getRow(r);
+    for (const c of cols) {
+      if (cellDisplayString(row.getCell(c)) !== '') return false;
+    }
+    return true;
+  };
 
-  let html = `<table style="border-collapse:collapse;table-layout:fixed;width:${px(colWidths.reduce((a, b) => a + b, 0))};background:#fff;">`;
-  html += '<colgroup>' + colWidths.map(w => `<col style="width:${px(w)}">`).join('') + '</colgroup>';
+  let html = `<table style="border-collapse:collapse;table-layout:fixed;width:${px(widths.reduce((a, b) => a + b, 0))};background:#fff;">`;
+  html += '<colgroup>' + widths.map(w => `<col style="width:${px(w)}">`).join('') + '</colgroup>';
 
-  for (let r = 1; r <= rowCount; r++) {
+  let emptyRun = 0;
+  for (let r = range.r1; r <= range.r2; r++) {
     const row = sheet.getRow(r);
     if (row?.hidden) continue;
-    const rowH = (row?.height ?? 15) * (96 / 72); // points → px
+
+    // Collapse consecutive empty rows into one slim spacer that keeps the
+    // visual grouping without wasting page space.
+    const isEmpty = rowIsEmpty(r);
+    if (isEmpty) {
+      emptyRun++;
+      if (emptyRun > 1) continue;
+    } else {
+      emptyRun = 0;
+    }
+
+    const rowH = isEmpty ? 8 : (row?.height ?? 15) * (96 / 72); // points → px
     html += `<tr style="height:${px(rowH)};">`;
 
-    for (const c of visibleCols) {
+    for (const c of cols) {
       if (covered.has(`${r},${c}`)) continue;
       const cell = row.getCell(c);
       const merge = masters.get(`${r},${c}`);
@@ -148,7 +236,9 @@ function sheetToHtml(sheet: Worksheet, fit: number): string {
         if (bg) css.push(`background:${bg}`);
       }
 
-      css.push(`font-size:${px((font.size ?? 11) * (96 / 72))}`);
+      // Widths shrink with `fit`, but the font never drops below a readable floor.
+      const fontPx = Math.max((font.size ?? 11) * (96 / 72) * fit, MIN_READABLE_FONT_PX);
+      css.push(`font-size:${Math.round(fontPx * 10) / 10}px`);
       css.push(`font-family:${font.name ? `'${font.name}',` : ''}Calibri,Arial,Helvetica,sans-serif`);
       if (font.bold) css.push('font-weight:bold');
       if (font.italic) css.push('font-style:italic');
@@ -167,27 +257,17 @@ function sheetToHtml(sheet: Worksheet, fit: number): string {
       css.push('white-space:pre-wrap', 'word-break:break-word', 'line-height:normal');
 
       const span = merge ? ` rowspan="${merge.rowSpan}" colspan="${merge.colSpan}"` : '';
-      html += `<td${span} style="${css.join(';')}">${escapeHtml(formatCellValue(cell))}</td>`;
+      html += `<td${span} style="${css.join(';')}">${isEmpty ? '' : escapeHtml(formatCellValue(cell))}</td>`;
     }
     html += '</tr>';
   }
   html += '</table>';
 
-  const truncated = sheet.rowCount > MAX_ROWS_PER_SHEET
-    ? `<p style="font:italic 11px Arial;color:#888;margin:6px 0 0;">Showing first ${MAX_ROWS_PER_SHEET} of ${sheet.rowCount} rows.</p>`
+  const totalDataRows = range.r2 - range.r1 + 1;
+  const truncated = totalDataRows >= MAX_ROWS_PER_SHEET
+    ? `<p style="font:italic 11px Arial;color:#888;margin:6px 0 0;">Showing the first ${MAX_ROWS_PER_SHEET} rows of data.</p>`
     : '';
   return html + truncated;
-}
-
-function sheetNaturalWidth(sheet: Worksheet): number {
-  const colCount = Math.min(sheet.columnCount || 1, MAX_COLS_PER_SHEET);
-  let total = 0;
-  for (let c = 1; c <= colCount; c++) {
-    const col = sheet.getColumn(c);
-    if (col?.hidden) continue;
-    total += ((col?.width ?? 8.43) * 7) + 5;
-  }
-  return total;
 }
 
 // Minimal RFC-4180 CSV parser (quoted fields, embedded commas/newlines).
@@ -218,7 +298,9 @@ function parseCsv(text: string): string[][] {
 
 function csvToHtml(rows: string[][]): string {
   if (rows.length === 0) return '<p style="font:12px Arial;color:#888;">Empty file.</p>';
-  const cols = Math.max(...rows.map(r => r.length));
+  // Drop trailing columns that hold no data in any row.
+  let cols = Math.max(...rows.map(r => r.length));
+  while (cols > 1 && rows.every(r => !(r[cols - 1] ?? '').trim())) cols--;
   let html = '<table style="border-collapse:collapse;width:100%;background:#fff;table-layout:fixed;">';
   rows.slice(0, MAX_ROWS_PER_SHEET).forEach((r, ri) => {
     html += '<tr>';
@@ -261,24 +343,32 @@ export default function ExcelToPdfPage() {
           throw new Error(`"${file.name}" could not be read as an Excel workbook. Make sure it is a valid .xlsx file.`);
         }
 
-        const sheets = workbook.worksheets.filter(s => s.state !== 'hidden' && s.state !== 'veryHidden' && s.rowCount > 0);
-        if (sheets.length === 0) throw new Error('No visible data found in this workbook.');
+        // Only sheets — and within them, only the cell range — that actually
+        // contain data. Formatting-only cells are excluded.
+        const sheetInfos = workbook.worksheets
+          .filter(s => s.state !== 'hidden' && s.state !== 'veryHidden')
+          .map(sheet => {
+            const range = getUsedRange(sheet, parseMerges(sheet));
+            return range ? { sheet, range, natural: sheetNaturalWidth(sheet, range) } : null;
+          })
+          .filter((x): x is { sheet: Worksheet; range: UsedRange; natural: number } => x !== null);
+
+        if (sheetInfos.length === 0) throw new Error('No data found in this workbook.');
 
         // Excel-style page setup: widest sheet decides portrait vs landscape,
         // then each sheet is fit-to-width for that orientation.
-        const widest = Math.max(...sheets.map(sheetNaturalWidth));
+        const widest = Math.max(...sheetInfos.map(i => i.natural));
         const orientation: 'portrait' | 'landscape' = widest > PORTRAIT_PX * 1.25 ? 'landscape' : 'portrait';
         const containerPx = (orientation === 'landscape' ? LANDSCAPE_PX : PORTRAIT_PX) - 32;
 
         const parts: string[] = [];
-        for (const sheet of sheets) {
-          const natural = sheetNaturalWidth(sheet);
+        for (const { sheet, range, natural } of sheetInfos) {
           const fit = Math.min(1, containerPx / Math.max(natural, 1));
           if (parts.length > 0) parts.push('<div style="height:24px;"></div>');
-          if (sheets.length > 1) {
+          if (sheetInfos.length > 1) {
             parts.push(`<div style="font:bold 13px Calibri,Arial,sans-serif;color:#333;background:#e9edf3;border:1px solid #cfd6df;border-bottom:0;display:inline-block;padding:5px 14px;border-radius:6px 6px 0 0;">${escapeHtml(sheet.name)}</div>`);
           }
-          parts.push(sheetToHtml(sheet, fit));
+          parts.push(sheetToHtml(sheet, range, fit));
         }
 
         const html = `<div style="padding:16px;background:#fff;">${parts.join('')}</div>`;
