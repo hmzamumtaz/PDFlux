@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import { ArrowLeft, Loader2, Sparkles, AlertCircle, CheckCircle2, Copy, Check } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
-import { summarizePdf } from '@/lib/pdf-engine';
+import { summarizePdf } from '@/lib/summarizer';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -14,7 +14,6 @@ function formatBytes(bytes: number): string {
 
 export default function AiSummarizerPage() {
   const [files, setFiles] = useState<File[]>([]);
-  const [wordCount, setWordCount] = useState(250);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState('');
   const [result, setResult] = useState<{ summary: string; wordCount: number; originalWordCount: number } | null>(null);
@@ -27,7 +26,7 @@ export default function AiSummarizerPage() {
     setError(null);
     setResult(null);
     try {
-      const res = await summarizePdf(files[0], { wordCount }, (msg) => setProgress(msg));
+      const res = await summarizePdf(files[0], (msg) => setProgress(msg));
       setResult(res);
     } catch (err: any) {
       setError(err.message || 'Failed to summarize');
@@ -35,7 +34,7 @@ export default function AiSummarizerPage() {
       setProcessing(false);
       setProgress('');
     }
-  }, [files, wordCount]);
+  }, [files]);
 
   const handleCopy = () => {
     if (!result) return;
@@ -80,20 +79,6 @@ export default function AiSummarizerPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Size</span>
                   <span className="text-sm font-medium text-foreground">{formatBytes(files[0].size)}</span>
-                </div>
-              </div>
-
-              {/* Summary length selector */}
-              <div>
-                <label className="block text-sm font-semibold text-foreground mb-2">Summary length</label>
-                <p className="text-xs text-muted-foreground mb-3">Approximate number of words in the summary.</p>
-                <div className="flex flex-wrap gap-2">
-                  {[100, 150, 250, 400, 600].map(wc => (
-                    <button key={wc} onClick={() => setWordCount(wc)}
-                      className={`px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${wordCount === wc ? 'border-primary bg-primary/5 text-primary' : 'border-border hover:bg-gray-50 text-muted-foreground hover:text-foreground'}`}>
-                      {wc} words
-                    </button>
-                  ))}
                 </div>
               </div>
 

@@ -84,9 +84,7 @@ export default function Header() {
             {navCategories.map((cat, i) => (
               <DropdownMenu key={cat} category={cat} tools={getToolsByCategory(cat)} alignRight={i >= 2} />
             ))}
-            <Link href="/tools/ai-summarizer" className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-              AI Tools
-            </Link>
+            <DropdownMenu category="PDF Intelligence" tools={getToolsByCategory('PDF Intelligence')} alignRight={true} />
           </nav>
 
           <button
@@ -126,13 +124,6 @@ export default function Header() {
                 )}
               </div>
             ))}
-            <Link
-              href="/tools/ai-summarizer"
-              onClick={() => setMobileOpen(false)}
-              className="block px-3 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
-            >
-              AI Tools
-            </Link>
           </div>
         </div>
       )}
