@@ -1,10 +1,10 @@
 {
-  "name": "pdflux",
+  "name": "folio",
   "version": "1.0.0",
   "private": true,
   "main": "electron.js",
-  "author": "PDFlux",
-  "description": "The modern PDF toolkit - edit, convert, merge & optimize PDFs",
+  "author": "Folio",
+  "description": "Folio \u2014 the modern PDF toolkit: edit, convert, merge & optimize PDFs",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -15,8 +15,8 @@
     "electron:build:dir": "next build && electron-builder --mac --dir"
   },
   "build": {
-    "appId": "com.pdflux.app",
-    "productName": "PDFlux",
+    "appId": "com.folio.app",
+    "productName": "Folio",
     "directories": {
       "output": "dist-electron"
     },

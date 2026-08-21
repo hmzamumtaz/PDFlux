@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useState, useRef, useEffect } from 'react';
-import { Menu, X, FileText, ChevronDown } from 'lucide-react';
+import { Menu, X, ChevronDown } from 'lucide-react';
+import BrandMark from './BrandMark';
 import * as LucideIcons from 'lucide-react';
 import { categories, getToolsByCategory, type ToolInfo } from '@/lib/tools-data';
 
@@ -72,12 +73,10 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-9 h-9 bg-foreground rounded-lg flex items-center justify-center group-hover:scale-105 transition-transform">
-              <FileText className="w-5 h-5 text-white" strokeWidth={2.5} />
+            <div className="w-9 h-9 bg-black rounded-lg flex items-center justify-center group-hover:scale-105 transition-transform">
+              <BrandMark className="w-5 h-5 text-white" />
             </div>
-            <span className="text-xl font-bold tracking-tight">
-              PDF<span className="font-light text-primary">lux</span>
-            </span>
+            <span className="text-xl font-bold tracking-tight text-black">Folio</span>
           </Link>
 
           <nav className="hidden lg:flex items-center gap-1">

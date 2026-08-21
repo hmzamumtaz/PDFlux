@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { ArrowLeft, Download, Loader2, Check, AlertCircle, FileText, Trash2, FileDown, List, LayoutGrid, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Download, Loader2, Check, AlertCircle, FileText, Trash2, FileDown, List, LayoutGrid, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 import Link from 'next/link';
 import { getToolBySlug } from '@/lib/tools-data';
 import FileUpload from './FileUpload';
+import LivePreviewModal from './LivePreviewModal';
 import { downloadBlob, downloadBlobsAsZip, renderPdfPages, getOutputFilename } from '@/lib/pdf-engine';
 
 interface ToolPageProps {
@@ -44,7 +45,7 @@ function extFor(result: Blob) {
 }
 
 // When a run produces several outputs (page images, batches), number them so
-// the PDFlux_[tool]_[date] names don't all collide.
+// the Folio_[tool]_[date] names don't all collide.
 function sequenceFor(results: ProcessedResult[], index: number): number | undefined {
   return results.length > 1 ? index + 1 : undefined;
 }
@@ -253,6 +254,10 @@ export default function ToolPage({
   const [rightView, setRightView] = useState<'list' | 'grid'>('list');
   const [leftGridIdx, setLeftGridIdx] = useState(0);
   const [rightGridIdx, setRightGridIdx] = useState(0);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  // Bumped by any interaction inside the options panel so the live preview
+  // re-runs — no per-tool wiring needed.
+  const [optionsVersion, setOptionsVersion] = useState(0);
 
   const allSelected = files.length > 0 && selected.size === files.length;
   const someSelected = selected.size > 0 && !allSelected;
@@ -327,6 +332,17 @@ export default function ToolPage({
     } finally {
       setProcessing(false);
     }
+  }, [files, selected, onProcess, processOptions, processAllTogether]);
+
+  const bumpOptions = useCallback(() => setOptionsVersion(v => v + 1), []);
+
+  // Runs the same conversion the download button would, on the first selected
+  // file, so what the preview shows is exactly what gets saved.
+  const runPreview = useCallback(async () => {
+    const indices = Array.from(selected).sort((a, b) => a - b);
+    const chosen = indices.map(i => files[i]).filter(Boolean);
+    if (chosen.length === 0) throw new Error('Select a file to preview.');
+    return onProcess(processAllTogether ? chosen : [chosen[0]], processOptions);
   }, [files, selected, onProcess, processOptions, processAllTogether]);
 
   const handleDownloadResult = useCallback((result: ProcessedResult) => {
@@ -426,7 +442,11 @@ export default function ToolPage({
             <div className="w-full lg:w-96 shrink-0 overflow-hidden">
               <div className="lg:sticky lg:top-8 space-y-4">
                 <div className="bg-white rounded-2xl border border-border p-6 shadow-sm">
-                  {options && <div className="mb-4">{options}</div>}
+                  {options && (
+                    <div className="mb-4" onChangeCapture={bumpOptions} onInputCapture={bumpOptions} onClickCapture={bumpOptions}>
+                      {options}
+                    </div>
+                  )}
                   {children && <div className="mb-4">{children}</div>}
                   {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 animate-fade-in"><AlertCircle className="w-4 h-4 text-destructive shrink-0" /><p className="text-xs text-destructive">{error}</p></div>}
                   {progress && (
@@ -459,10 +479,16 @@ export default function ToolPage({
                       </div>
                     </div>
                   ) : (
-                    <button onClick={handleProcess} disabled={selected.size === 0 || processing || !minFilesMet} className={`w-full px-6 py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${selected.size > 0 && !processing && minFilesMet ? 'bg-primary hover:bg-primary-hover text-white hover:shadow-lg hover:shadow-primary/25 active:scale-[0.98]' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
-                      {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                      {processLabel} {selected.size > 0 && `(${selected.size})`}
-                    </button>
+                    <div className="space-y-2">
+                      <button onClick={handleProcess} disabled={selected.size === 0 || processing || !minFilesMet} className={`w-full px-6 py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${selected.size > 0 && !processing && minFilesMet ? 'bg-primary hover:bg-primary-hover text-white hover:shadow-lg hover:shadow-primary/25 active:scale-[0.98]' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
+                        {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                        {processLabel} {selected.size > 0 && `(${selected.size})`}
+                      </button>
+                      <button onClick={() => setPreviewOpen(true)} disabled={selected.size === 0 || processing || !minFilesMet}
+                        className="w-full px-6 py-2.5 rounded-xl font-medium text-sm border border-border text-foreground hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed">
+                        <Eye className="w-4 h-4" /> Live preview
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -471,6 +497,14 @@ export default function ToolPage({
         )}
 
       </div>
+
+      <LivePreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        toolName={tool.name}
+        run={runPreview}
+        version={optionsVersion}
+      />
     </div>
   );
 }
