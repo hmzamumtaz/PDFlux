@@ -697,6 +697,129 @@ export async function renderPdfPages(file: File, pageNumbers: number[]): Promise
   return results;
 }
 
+export interface FooterWhitespaceResult {
+  page: number;
+  found: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  sufficient: boolean;
+  message: string;
+}
+
+export async function scanPageFooterWhitespace(
+  file: File,
+  pageNum: number,
+  minSignWidth: number,
+  minSignHeight: number,
+): Promise<FooterWhitespaceResult> {
+  const pdfjsLib = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs`;
+
+  const buf = await readFileAsArrayBuffer(file);
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+
+  if (pageNum < 1 || pageNum > pdf.numPages) {
+    return { page: pageNum, found: false, x: 0, y: 0, width: 0, height: 0, sufficient: false, message: 'Invalid page number.' };
+  }
+
+  const page = await pdf.getPage(pageNum);
+  const vp = page.getViewport({ scale: 1 });
+  const pageWidth = vp.width;
+  const pageHeight = vp.height;
+
+  // Render at higher scale for accurate pixel analysis
+  const renderScale = 2;
+  const renderVp = page.getViewport({ scale: renderScale });
+  const canvas = document.createElement('canvas');
+  canvas.width = renderVp.width;
+  canvas.height = renderVp.height;
+  const ctx = canvas.getContext('2d')!;
+  await page.render({ canvasContext: ctx, viewport: renderVp, canvas }).promise;
+
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imgData.data;
+
+  // Analyze bottom 25% of page for whitespace
+  const footerStartY = Math.floor(canvas.height * 0.75);
+  const footerHeight = canvas.height - footerStartY;
+
+  // Build a binary grid: 1 = white/near-white pixel, 0 = content
+  const grid: number[][] = [];
+  const step = 2; // sample every 2px for performance
+  for (let y = footerStartY; y < canvas.height; y += step) {
+    const row: number[] = [];
+    for (let x = 0; x < canvas.width; x += step) {
+      const idx = (y * canvas.width + x) * 4;
+      const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+      // Consider pixel "white" if all channels > 230
+      row.push(r > 230 && g > 230 && b > 230 ? 1 : 0);
+    }
+    grid.push(row);
+  }
+
+  // Find largest rectangle in footer whitespace using brute force scan
+  const rows = grid.length;
+  const cols = grid[0]?.length || 0;
+  let bestArea = 0;
+  let bestRect = { x: 0, y: 0, w: 0, h: 0 };
+
+  // For each row, find consecutive white runs
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (grid[r][c] === 0) continue;
+      // Expand right
+      let maxW = 0;
+      while (c + maxW < cols && grid[r][c + maxW] === 1) maxW++;
+      // Expand down
+      let maxH = 1;
+      while (r + maxH < rows) {
+        let allWhite = true;
+        for (let cc = c; cc < c + maxW; cc++) {
+          if (grid[r + maxH][cc] === 0) { allWhite = false; break; }
+        }
+        if (!allWhite) break;
+        maxH++;
+      }
+      const area = maxW * maxH;
+      if (area > bestArea) {
+        bestArea = area;
+        bestRect = { x: c * step, y: footerStartY + r * step, w: maxW * step, h: maxH * step };
+      }
+    }
+  }
+
+  // Convert from canvas pixels to PDF points
+  const scaleX = pageWidth / canvas.width;
+  const scaleY = pageHeight / canvas.height;
+  const pdfX = bestRect.x * scaleX;
+  const pdfY = pageHeight - (bestRect.y * scaleY) - (bestRect.h * scaleY); // pdf-lib y is bottom-up
+  const pdfW = bestRect.w * scaleX;
+  const pdfH = bestRect.h * scaleY;
+
+  const hasWhitespace = bestArea > 0;
+  const sufficient = pdfW >= minSignWidth && pdfH >= minSignHeight;
+
+  let message = '';
+  if (!hasWhitespace) {
+    message = 'No clear whitespace found in the footer area of this page. The bottom of the document may contain text or graphics.';
+  } else if (!sufficient) {
+    message = `Found a ${Math.round(pdfW)}x${Math.round(pdfH)}pt whitespace area, but need at least ${Math.round(minSignWidth)}x${Math.round(minSignHeight)}pt for a readable signature.`;
+  }
+
+  return {
+    page: pageNum,
+    found: hasWhitespace,
+    x: pdfX,
+    y: pdfY,
+    width: pdfW,
+    height: pdfH,
+    sufficient,
+    message,
+  };
+}
+
 export async function extractTextFromPdf(file: File): Promise<string[]> {
   const pdfjsLib = await import('pdfjs-dist');
   pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/6.2.108/pdf.worker.min.mjs`;
