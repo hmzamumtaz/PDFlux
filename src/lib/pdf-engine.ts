@@ -563,86 +563,73 @@ export async function summarizePdf(file: File, options: SummaryOptions, onProgre
     return { summary: 'No extractable text found. The document may be scanned/image-based.', wordCount: 0, originalWordCount: 0 };
   }
 
-  onProgress?.('Analyzing content...');
-  const sentences = fullText.replace(/\n+/g, ' ').split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 15);
+  onProgress?.('Analyzing document...');
   const allWords = tokenize(fullText);
   const originalWordCount = allWords.length;
+  const sentences = fullText.replace(/\n+/g, ' ').split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 15);
 
-  if (sentences.length <= 3) {
-    return { summary: sentences.join(' '), wordCount: allWords.length, originalWordCount };
+  if (sentences.length === 0) {
+    return { summary: 'No complete sentences found in the document.', wordCount: 0, originalWordCount };
   }
 
-  onProgress?.('Scoring sentences...');
-  const scores = sentenceScores(sentences, allWords);
+  onProgress?.('Building summary...');
 
-  // Select top sentences up to target word count
-  const indexed = scores.map((score, i) => ({ score, i })).sort((a, b) => b.score - a.score);
+  // Stopwords for filtering
+  const stopwords = new Set(['the','and','for','are','but','not','you','all','can','had','her','was','one','our','out','has','his','how','its','may','new','now','old','see','way','who','did','get','let','say','she','too','use','him','with','that','this','will','each','make','like','long','look','many','most','over','such','take','than','them','then','these','from','have','been','said','more','when','what','your','were','they','been','would','could','should','there','their','about','which','when','where','into','also','after','first','only','other','some','very','just','been','also','into','more','most','some','time','very','when','come','made','could','many','such','take','than','back','were','been','had','has','his','her','our','one','you','all','can','did','get','let','not','but','are','his','how','its','may','who','use','him','old','new','now','see','say','too','way']);
 
-  const selected: { i: number; score: number }[] = [];
-  let wordBudget = options.wordCount;
-
-  for (const item of indexed) {
-    const sentWords = tokenize(sentences[item.i]).length;
-    if (sentWords <= wordBudget) {
-      selected.push(item);
-      wordBudget -= sentWords;
+  // Count word frequencies (excluding stopwords)
+  const freq: Record<string, number> = {};
+  for (const w of allWords) {
+    if (!stopwords.has(w) && w.length > 3) {
+      freq[w] = (freq[w] || 0) + 1;
     }
-    if (wordBudget <= 0) break;
   }
 
-  // Sort by original document order for coherence
-  selected.sort((a, b) => a.i - b.i);
+  // Get top keywords
+  const keywords = Object.entries(freq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([word]) => word);
 
-  const extractedText = selected.map(s => sentences[s.i]).join(' ');
+  // Score sentences by keyword density + position
+  const totalSents = sentences.length;
+  const scored = sentences.map((sent, i) => {
+    const words = tokenize(sent);
+    const keywordHits = words.filter(w => keywords.includes(w)).length;
+    const keywordScore = keywordHits / Math.max(words.length, 1);
 
-  // Smart rewrite: compress, deduplicate, clean
-  onProgress?.('Rewriting summary...');
-  const rewritten = smartRewrite(extractedText, options.wordCount);
-  const wordCount = tokenize(rewritten).length;
-  return { summary: rewritten, wordCount, originalWordCount };
-}
+    // Position: first 2 and last 2 sentences are usually most informative
+    let posBonus = 1;
+    if (i === 0) posBonus = 1.8;
+    else if (i === 1) posBonus = 1.5;
+    else if (i === totalSents - 1) posBonus = 1.6;
+    else if (i === totalSents - 2) posBonus = 1.3;
+    else if (i < totalSents * 0.2) posBonus = 1.2;
 
-function smartRewrite(text: string, targetWords: number): string {
-  // Split into sentences
-  const sents = text.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 10);
-  if (sents.length === 0) return text;
-
-  // Remove duplicate/overlapping sentences
-  const unique: string[] = [];
-  for (const s of sents) {
-    const words = tokenize(s);
-    const isDupe = unique.some(u => {
-      const uWords = tokenize(u);
-      const overlap = words.filter(w => uWords.includes(w)).length;
-      return overlap / Math.max(words.length, 1) > 0.6;
-    });
-    if (!isDupe) unique.push(s);
-  }
-
-  // Compress each sentence: remove filler words, redundant phrases
-  const fillers = /\b(very|really|actually|basically|essentially|in order to|due to the fact that|at this point in time|for the purpose of|in the event that|on a daily basis|in the process of|it is important to note that|as a matter of fact|in light of the fact that|with regard to|in terms of|it should be noted that|the fact that|has the ability to|is able to|in addition to|along with|together with)\b/gi;
-  const redundancies = /\b(past history|future plans|free gift|each and every|end result|basic fundamentals|true facts|safe haven|final outcome|important essentials|absolutely essential|each individual|group together|combine together|collaborate together|repeat again|return back|advance forward|descend down|ascend up|rise up|fall down)\b/gi;
-
-  const compressed = unique.map(s => {
-    let c = s.replace(fillers, '').replace(redundancies, '').replace(/\s{2,}/g, ' ').trim();
-    // Capitalize first letter
-    c = c.charAt(0).toUpperCase() + c.slice(1);
-    return c;
+    return { sent, score: keywordScore * posBonus, index: i };
   });
 
-  // Fit to target word count
-  let result: string[] = [];
-  let wordBudget = targetWords;
-  for (const s of compressed) {
-    const wc = tokenize(s).length;
-    if (wc <= wordBudget) {
-      result.push(s);
-      wordBudget -= wc;
+  // Pick top sentences up to target word count, preserving document order
+  const top = scored.sort((a, b) => b.score - a.score);
+  const chosen: typeof top = [];
+  let budget = options.wordCount;
+
+  for (const item of top) {
+    const wc = tokenize(item.sent).length;
+    if (wc <= budget && wc > 5) {
+      chosen.push(item);
+      budget -= wc;
     }
-    if (wordBudget <= 0) break;
+    if (budget <= 0) break;
   }
 
-  return result.join(' ');
+  // Sort by document order
+  chosen.sort((a, b) => a.index - b.index);
+
+  const summary = chosen.map(c => c.sent).join(' ');
+  const wordCount = tokenize(summary).length;
+
+  return { summary, wordCount, originalWordCount };
 }
 
 const LANG_CODES: Record<string, string> = {
