@@ -442,7 +442,7 @@ export async function renderPptxToPdf(
 
   const pdf = await PDFDocument.create();
   pdf.setTitle(file.name.replace(/\.pptx$/i, ''));
-  pdf.setProducer('PDFlux');
+  pdf.setProducer('Folio');
   const fonts: Fonts = {
     regular: await pdf.embedFont(StandardFonts.Helvetica),
     bold: await pdf.embedFont(StandardFonts.HelveticaBold),

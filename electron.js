@@ -11,7 +11,7 @@ function createWindow() {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    title: 'PDFlux',
+    title: 'Folio',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
     backgroundColor: '#ffffff',

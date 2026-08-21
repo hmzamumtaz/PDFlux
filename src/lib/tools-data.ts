@@ -24,16 +24,16 @@ export const tools: ToolInfo[] = [
 
   // Convert to PDF
   { slug: 'jpg-to-pdf', name: 'JPG to PDF', description: 'Convert images to PDF documents', icon: 'Image', category: 'Create PDF', color: '#f97316' },
-  { slug: 'word-to-pdf', name: 'Word to PDF', description: 'Convert DOCX documents to PDF', icon: 'FileText', category: 'Create PDF', color: '#2563eb' },
-  { slug: 'powerpoint-to-pdf', name: 'PowerPoint to PDF', description: 'Convert presentations to PDF', icon: 'Presentation', category: 'Create PDF', color: '#dc2626' },
-  { slug: 'excel-to-pdf', name: 'Excel to PDF', description: 'Convert spreadsheets to PDF', icon: 'Table', category: 'Create PDF', color: '#16a34a' },
+  { slug: 'word-to-pdf', name: 'Word to PDF', description: 'Turn a document (DOCX) into a PDF', icon: 'FileText', category: 'Create PDF', color: '#2563eb' },
+  { slug: 'powerpoint-to-pdf', name: 'PowerPoint to PDF', description: 'Turn slides (PPTX) into a PDF', icon: 'Presentation', category: 'Create PDF', color: '#dc2626' },
+  { slug: 'excel-to-pdf', name: 'Excel to PDF', description: 'Turn a spreadsheet (XLSX) into a PDF', icon: 'Table', category: 'Create PDF', color: '#16a34a' },
   { slug: 'html-to-pdf', name: 'HTML to PDF', description: 'Convert web pages to PDF', icon: 'Globe', category: 'Create PDF', color: '#7c3aed' },
 
   // Convert from PDF
   { slug: 'pdf-to-jpg', name: 'PDF to JPG', description: 'Convert PDF pages to JPG images', icon: 'FileImage', category: 'Export PDF', color: '#eab308' },
-  { slug: 'pdf-to-word', name: 'PDF to Word', description: 'Convert PDF to editable DOCX', icon: 'FileType', category: 'Export PDF', color: '#2563eb' },
-  { slug: 'pdf-to-powerpoint', name: 'PDF to PowerPoint', description: 'Convert PDF to editable PPTX', icon: 'Slideshow', category: 'Export PDF', color: '#dc2626' },
-  { slug: 'pdf-to-excel', name: 'PDF to Excel', description: 'Convert PDF tables to XLSX', icon: 'Grid3x3', category: 'Export PDF', color: '#16a34a' },
+  { slug: 'pdf-to-word', name: 'PDF to Word', description: 'Turn a PDF into an editable document (DOCX)', icon: 'FileType', category: 'Export PDF', color: '#0891b2' },
+  { slug: 'pdf-to-powerpoint', name: 'PDF to PowerPoint', description: 'Turn a PDF into editable slides (PPTX)', icon: 'Slideshow', category: 'Export PDF', color: '#ea580c' },
+  { slug: 'pdf-to-excel', name: 'PDF to Excel', description: 'Turn PDF tables into a spreadsheet (XLSX)', icon: 'Grid3x3', category: 'Export PDF', color: '#0d9488' },
   { slug: 'pdf-to-pdfa', name: 'PDF to PDF/A', description: 'Convert PDF to archival PDF/A format', icon: 'Archive', category: 'Export PDF', color: '#64748b' },
   { slug: 'pdf-to-markdown', name: 'PDF to Markdown', description: 'Convert PDF content to Markdown text', icon: 'FileCode', category: 'Export PDF', color: '#0f766e' },
 

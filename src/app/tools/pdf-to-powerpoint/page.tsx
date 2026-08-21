@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import ToolPage from '@/components/ToolPage';
 import { pdfToPowerpointStructured } from '@/lib/pdf-to-pptx';
+import { assertExpectedInput } from '@/lib/input-guard';
 
 export default function PdfToPowerPointPage() {
   const [status, setStatus] = useState<string | null>(null);
@@ -25,6 +26,11 @@ export default function PdfToPowerPointPage() {
         </div>
       }
       onProcess={async (files) => {
+        assertExpectedInput(files[0], {
+          extensions: ['.pdf'],
+          label: 'a PDF',
+          counterpart: { extensions: ['.pptx', '.ppt'], toolName: 'PowerPoint to PDF', does: 'turn slides into a PDF' },
+        });
         setSummary(null);
         const res = await pdfToPowerpointStructured(files[0], (p, t) => setStatus(`Reading page ${p} of ${t}...`));
         setStatus(null);

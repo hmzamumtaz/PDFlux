@@ -1,3 +1,8 @@
+/**
+ * Generates the desktop app icon: the Folio mark — a black sheet outline with a
+ * folded corner on a white ground. Monochrome by design, so it stays crisp at
+ * every size the OS renders it.
+ */
 const { createCanvas } = require('canvas');
 const fs = require('fs');
 const path = require('path');
@@ -6,92 +11,50 @@ const size = 1024;
 const canvas = createCanvas(size, size);
 const ctx = canvas.getContext('2d');
 
-// White background
+// White ground
 ctx.fillStyle = '#ffffff';
 ctx.fillRect(0, 0, size, size);
 
-// Rounded rect background
-const radius = size * 0.18;
-const x = size * 0.15;
-const y = size * 0.15;
-const w = size * 0.7;
-const h = size * 0.7;
+// The mark is authored on a 64x64 grid; scale it up to the icon canvas.
+const s = size / 64;
+ctx.strokeStyle = '#000000';
+ctx.lineWidth = 4 * s;
+ctx.lineJoin = 'round';
+ctx.lineCap = 'round';
 
+const r = 3 * s;
+
+// Sheet outline: rounded corners everywhere except the top-right, which is cut
+// to form the folded corner.
 ctx.beginPath();
-ctx.moveTo(x + radius, y);
-ctx.lineTo(x + w - radius, y);
-ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
-ctx.lineTo(x + w, y + h - radius);
-ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
-ctx.lineTo(x + radius, y + h);
-ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
-ctx.lineTo(x, y + radius);
-ctx.quadraticCurveTo(x, y, x + radius, y);
+ctx.moveTo(20 * s, 12 * s);
+ctx.lineTo(36 * s, 12 * s);
+ctx.lineTo(46 * s, 22 * s);
+ctx.lineTo(46 * s, 48 * s);
+ctx.arcTo(46 * s, 51 * s, 43 * s, 51 * s, r);
+ctx.lineTo(20 * s, 51 * s);
+ctx.arcTo(17 * s, 51 * s, 17 * s, 48 * s, r);
+ctx.lineTo(17 * s, 15 * s);
+ctx.arcTo(17 * s, 12 * s, 20 * s, 12 * s, r);
 ctx.closePath();
-ctx.fillStyle = '#111111';
-ctx.fill();
+ctx.stroke();
 
-// PDF icon - document shape
-const docX = size * 0.32;
-const docY = size * 0.22;
-const docW = size * 0.36;
-const docH = size * 0.44;
-const docR = size * 0.03;
-
+// The fold itself
 ctx.beginPath();
-ctx.moveTo(docX + docR, docY);
-ctx.lineTo(docX + docW - docR - size * 0.06, docY);
-ctx.lineTo(docX + docW, docY + size * 0.06);
-ctx.lineTo(docX + docW, docY + docH - docR);
-ctx.quadraticCurveTo(docX + docW, docY + docH, docX + docW - docR, docY + docH);
-ctx.lineTo(docX + docR, docY + docH);
-ctx.quadraticCurveTo(docX, docY + docH, docX, docY + docH - docR);
-ctx.lineTo(docX, docY + docR);
-ctx.quadraticCurveTo(docX, docY, docX + docR, docY);
-ctx.closePath();
-ctx.fillStyle = '#ffffff';
-ctx.fill();
+ctx.moveTo(36 * s, 12 * s);
+ctx.lineTo(36 * s, 22 * s);
+ctx.lineTo(46 * s, 22 * s);
+ctx.stroke();
 
-// Folded corner
-const foldSize = size * 0.06;
+// Two content rules
 ctx.beginPath();
-ctx.moveTo(docX + docW - foldSize - size * 0.06, docY);
-ctx.lineTo(docX + docW - foldSize - size * 0.06, docY + foldSize);
-ctx.lineTo(docX + docW - size * 0.06, docY + foldSize);
-ctx.lineTo(docX + docW - size * 0.06, docY + size * 0.06);
-ctx.lineTo(docX + docW, docY + size * 0.06);
-ctx.lineTo(docX + docW - foldSize - size * 0.06, docY);
-ctx.closePath();
-ctx.fillStyle = '#e4e4e7';
-ctx.fill();
+ctx.moveTo(24 * s, 34 * s);
+ctx.lineTo(40 * s, 34 * s);
+ctx.moveTo(24 * s, 42 * s);
+ctx.lineTo(35 * s, 42 * s);
+ctx.stroke();
 
-// "P" letter
-ctx.fillStyle = '#6366f1';
-ctx.font = `bold ${size * 0.22}px sans-serif`;
-ctx.textAlign = 'center';
-ctx.textBaseline = 'middle';
-ctx.fillText('P', size * 0.42, size * 0.48);
-
-// Lines
-ctx.fillStyle = '#a1a1aa';
-const lineY1 = size * 0.58;
-const lineY2 = size * 0.63;
-const lineY3 = size * 0.68;
-const lineX = size * 0.28;
-const lineW = size * 0.44;
-const lineH = size * 0.018;
-
-ctx.beginPath();
-ctx.roundRect(lineX, lineY1, lineW * 0.8, lineH, lineH / 2);
-ctx.fill();
-ctx.beginPath();
-ctx.roundRect(lineX, lineY2, lineW, lineH, lineH / 2);
-ctx.fill();
-ctx.beginPath();
-ctx.roundRect(lineX, lineY3, lineW * 0.6, lineH, lineH / 2);
-ctx.fill();
-
-// Save
-const buffer = canvas.toBuffer('image/png');
-fs.writeFileSync(path.join(__dirname, 'build', 'icon.png'), buffer);
-console.log('Icon created: build/icon.png');
+const buildDir = path.join(__dirname, 'build');
+if (!fs.existsSync(buildDir)) fs.mkdirSync(buildDir, { recursive: true });
+fs.writeFileSync(path.join(buildDir, 'icon.png'), canvas.toBuffer('image/png'));
+console.log('Wrote build/icon.png (1024x1024)');

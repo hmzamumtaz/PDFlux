@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PDFlux - Modern PDF Toolkit",
+  title: "Folio - Modern PDF Toolkit",
   description: "Edit, convert, merge, compress, and optimize your PDFs. Files are processed in your browser — nothing is uploaded (except optional online translation).",
 };
 

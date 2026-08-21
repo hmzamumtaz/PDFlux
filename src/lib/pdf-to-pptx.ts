@@ -132,7 +132,7 @@ export async function pdfToPowerpointStructured(
 
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_16x9';
-  pptx.author = 'PDFlux';
+  pptx.author = 'Folio';
   pptx.title = file.name.replace(/\.pdf$/i, '');
 
   const ACCENT = '1F4E79';
