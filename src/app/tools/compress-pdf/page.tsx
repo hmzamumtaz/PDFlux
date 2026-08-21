@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import { ArrowLeft, Loader2, FileDown, AlertCircle, CheckCircle2, Minus, TrendingDown } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
-import { compressToTargetSize, CompressResult, downloadBlob } from '@/lib/pdf-engine';
+import { compressToTargetSize, CompressResult, downloadBlob, getOutputFilename } from '@/lib/pdf-engine';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -51,7 +51,7 @@ export default function CompressPdfPage() {
 
   const handleDownload = useCallback(() => {
     if (!result) return;
-    downloadBlob(result.blob, files[0].name.replace(/\.pdf$/i, '_compressed.pdf'));
+    downloadBlob(result.blob, getOutputFilename('compress-pdf', '.pdf'));
   }, [result, files]);
 
   return (

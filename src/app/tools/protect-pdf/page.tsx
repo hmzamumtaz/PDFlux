@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { ArrowLeft, Loader2, Lock, AlertCircle, Check, Download, Trash2, FileDown, List, LayoutGrid, ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
-import { protectPdf, downloadBlob, downloadBlobsAsZip, renderPdfPages } from '@/lib/pdf-engine';
+import { protectPdf, downloadBlob, downloadBlobsAsZip, renderPdfPages, getOutputFilename } from '@/lib/pdf-engine';
 
 interface FilePassword {
   file: File;
@@ -17,10 +17,9 @@ interface ProcessedResult {
   result: Blob;
 }
 
-function ResultCard({ sourceFile, result, onDownload, onDelete }: {
-  sourceFile: File; result: Blob; onDownload: () => void; onDelete: () => void;
+function ResultCard({ name, result, onDownload, onDelete }: {
+  name: string; result: Blob; onDownload: () => void; onDelete: () => void;
 }) {
-  const name = sourceFile.name.replace(/\.pdf$/i, '_protected.pdf');
   return (
     <div className="flex items-center gap-3 p-3 rounded-xl border border-border bg-white hover:bg-gray-50 transition-colors group">
       <div className="w-10 h-10 rounded-lg bg-green-50 flex items-center justify-center shrink-0"><Check className="w-5 h-5 text-green-500" /></div>
@@ -54,7 +53,7 @@ function ResultGridPreview({ results, currentIndex, onPrev, onNext, onDownload, 
     load();
     return () => { cancelled = true; };
   }, [currentIndex, r]);
-  const name = r.sourceFile.name.replace(/\.pdf$/i, '_protected.pdf');
+  const name = getOutputFilename('protect-pdf', '.pdf', results.length > 1 ? currentIndex + 1 : undefined);
   return (
     <div className="flex flex-col items-center gap-3">
       <div className="w-full bg-gray-50 rounded-xl border border-border overflow-hidden flex items-center justify-center" style={{ minHeight: 250, maxHeight: 350 }}>
@@ -194,9 +193,10 @@ export default function ProtectPdfPage() {
     }
   }, [files, getFilePassword, allowPrinting, allowModifying, allowCopying, allowAnnotating, allowFillingForms, allowExtraction, allowAssembly]);
 
-  const handleDownloadResult = useCallback((r: ProcessedResult) => {
-    downloadBlob(r.result, r.sourceFile.name.replace(/\.pdf$/i, '_protected.pdf'));
-  }, []);
+  const handleDownloadResult = useCallback((r: ProcessedResult, index?: number) => {
+    const seq = results.length > 1 && index !== undefined ? index + 1 : undefined;
+    downloadBlob(r.result, getOutputFilename('protect-pdf', '.pdf', seq));
+  }, [results.length]);
 
   const handleDeleteResult = useCallback((index: number) => {
     setResults(prev => prev.filter((_, i) => i !== index));
@@ -204,12 +204,12 @@ export default function ProtectPdfPage() {
 
   const handleDownloadAll = useCallback(async () => {
     if (results.length === 1) {
-      downloadBlob(results[0].result, results[0].sourceFile.name.replace(/\.pdf$/i, '_protected.pdf'));
+      downloadBlob(results[0].result, getOutputFilename('protect-pdf', '.pdf'));
       return;
     }
     await downloadBlobsAsZip(
-      results.map(r => ({ blob: r.result, name: r.sourceFile.name.replace(/\.pdf$/i, '_protected.pdf') })),
-      'protected_pdfs.zip',
+      results.map((r, i) => ({ blob: r.result, name: getOutputFilename('protect-pdf', '.pdf', i + 1) })),
+      getOutputFilename('protect-pdf', '.zip'),
     );
   }, [results]);
 
@@ -399,10 +399,10 @@ export default function ProtectPdfPage() {
                       </div>
                       {rightView === 'list' ? (
                         <div className="space-y-2 max-h-72 overflow-y-auto">
-                          {results.map((r, i) => <ResultCard key={i} sourceFile={r.sourceFile} result={r.result} onDownload={() => handleDownloadResult(r)} onDelete={() => handleDeleteResult(i)} />)}
+                          {results.map((r, i) => <ResultCard key={i} name={getOutputFilename('protect-pdf', '.pdf', results.length > 1 ? i + 1 : undefined)} result={r.result} onDownload={() => handleDownloadResult(r, i)} onDelete={() => handleDeleteResult(i)} />)}
                         </div>
                       ) : (
-                        <ResultGridPreview results={results} currentIndex={rightGridIdx} onPrev={() => setRightGridIdx(i => Math.max(0, i - 1))} onNext={() => setRightGridIdx(i => Math.min(results.length - 1, i + 1))} onDownload={() => handleDownloadResult(results[rightGridIdx])} onDelete={() => { handleDeleteResult(rightGridIdx); setRightGridIdx(i => Math.min(i, results.length - 2)); }} />
+                        <ResultGridPreview results={results} currentIndex={rightGridIdx} onPrev={() => setRightGridIdx(i => Math.max(0, i - 1))} onNext={() => setRightGridIdx(i => Math.min(results.length - 1, i + 1))} onDownload={() => handleDownloadResult(results[rightGridIdx], rightGridIdx)} onDelete={() => { handleDeleteResult(rightGridIdx); setRightGridIdx(i => Math.min(i, results.length - 2)); }} />
                       )}
                       <div className="flex gap-2 mt-4">
                         {results.length > 1 && <button onClick={handleDownloadAll} className="flex-1 px-4 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors flex items-center justify-center gap-1.5"><FileDown className="w-3.5 h-3.5" /> Download All</button>}

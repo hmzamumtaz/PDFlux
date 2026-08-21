@@ -6,7 +6,7 @@ import * as LucideIcons from 'lucide-react';
 import Link from 'next/link';
 import { getToolBySlug } from '@/lib/tools-data';
 import FileUpload from './FileUpload';
-import { downloadBlob, downloadBlobsAsZip, renderPdfPages } from '@/lib/pdf-engine';
+import { downloadBlob, downloadBlobsAsZip, renderPdfPages, getOutputFilename } from '@/lib/pdf-engine';
 
 interface ToolPageProps {
   slug: string;
@@ -39,19 +39,18 @@ const EXT_MAP: Record<string, string> = {
   'image/png': '.png',
 };
 
-function getOutputName(sourceFile: File, result: Blob, seq?: number) {
-  const ext = EXT_MAP[result.type] || (result.type.startsWith('image/') ? '.jpg' : '.bin');
-  const base = sourceFile.name.replace(/\.[^./\\]+$/, '');
-  return seq !== undefined ? `${base}_${seq}${ext}` : base + ext;
+function extFor(result: Blob) {
+  return EXT_MAP[result.type] || (result.type.startsWith('image/') ? '.jpg' : '.bin');
 }
 
-// When one source produces several outputs (e.g. PDF → one JPG per page),
-// number them so the files don't all collide on the same name.
+// When a run produces several outputs (page images, batches), number them so
+// the PDFlux_[tool]_[date] names don't all collide.
 function sequenceFor(results: ProcessedResult[], index: number): number | undefined {
-  const r = results[index];
-  const siblings = results.filter(o => o.sourceFile === r.sourceFile && (o.result.type || '') === (r.result.type || ''));
-  if (siblings.length <= 1) return undefined;
-  return siblings.indexOf(r) + 1;
+  return results.length > 1 ? index + 1 : undefined;
+}
+
+function outputNameFor(slug: string, results: ProcessedResult[], index: number) {
+  return getOutputFilename(slug, extFor(results[index].result), sequenceFor(results, index));
 }
 
 function ViewToggle({ mode, onChange }: { mode: 'list' | 'grid'; onChange: (m: 'list' | 'grid') => void }) {
@@ -202,7 +201,7 @@ function ResultGridPreview({ results, currentIndex, onPrev, onNext, onDownload, 
   );
 }
 
-function ResultCard({ sourceFile, result, seq, onDownload, onDelete }: { sourceFile: File; result: Blob; seq?: number; onDownload: () => void; onDelete: () => void }) {
+function ResultCard({ name, result, onDownload, onDelete }: { name: string; result: Blob; onDownload: () => void; onDelete: () => void }) {
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -214,7 +213,7 @@ function ResultCard({ sourceFile, result, seq, onDownload, onDelete }: { sourceF
         <FileText className="w-5 h-5 text-primary" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-foreground truncate">{getOutputName(sourceFile, result, seq)}</p>
+        <p className="text-sm font-medium text-foreground truncate">{name}</p>
         <p className="text-xs text-muted-foreground">{formatSize(result.size)}</p>
       </div>
       <div className="flex items-center gap-1 shrink-0">
@@ -332,8 +331,8 @@ export default function ToolPage({
 
   const handleDownloadResult = useCallback((result: ProcessedResult) => {
     const index = results.indexOf(result);
-    downloadBlob(result.result, getOutputName(result.sourceFile, result.result, index >= 0 ? sequenceFor(results, index) : undefined));
-  }, [results]);
+    downloadBlob(result.result, index >= 0 ? outputNameFor(slug, results, index) : getOutputFilename(slug, extFor(result.result)));
+  }, [results, slug]);
 
   const handleDeleteResult = useCallback((index: number) => {
     setResults(prev => prev.filter((_, i) => i !== index));
@@ -345,10 +344,9 @@ export default function ToolPage({
       return;
     }
     // Browsers block bursts of separate downloads — bundle into one ZIP.
-    const entries = results.map((r, i) => ({ blob: r.result, name: getOutputName(r.sourceFile, r.result, sequenceFor(results, i)) }));
-    const base = results[0]?.sourceFile.name.replace(/\.[^./\\]+$/, '') || 'output';
-    await downloadBlobsAsZip(entries, `${base}_pdflux.zip`);
-  }, [results, handleDownloadResult]);
+    const entries = results.map((r, i) => ({ blob: r.result, name: outputNameFor(slug, results, i) }));
+    await downloadBlobsAsZip(entries, getOutputFilename(slug, '.zip'));
+  }, [results, handleDownloadResult, slug]);
 
   const handleReset = useCallback(() => {
     setFiles([]); setSelected(new Set()); setResults([]); setProgress(null); setError(null);
@@ -400,7 +398,7 @@ export default function ToolPage({
                   </div>
                 </div>
                 {rightView === 'list' || !multiple ? (
-                  <div className="space-y-2">{results.map((r, i) => <ResultCard key={i} sourceFile={r.sourceFile} result={r.result} seq={sequenceFor(results, i)} onDownload={() => handleDownloadResult(r)} onDelete={() => handleDeleteResult(i)} />)}</div>
+                  <div className="space-y-2">{results.map((r, i) => <ResultCard key={i} name={outputNameFor(slug, results, i)} result={r.result} onDownload={() => handleDownloadResult(r)} onDelete={() => handleDeleteResult(i)} />)}</div>
                 ) : (
                   <ResultGridPreview results={results} currentIndex={rightGridIdx} onPrev={() => setRightGridIdx(i => Math.max(0, i - 1))} onNext={() => setRightGridIdx(i => Math.min(results.length - 1, i + 1))} onDownload={() => handleDownloadResult(results[rightGridIdx])} onDelete={() => { handleDeleteResult(rightGridIdx); setRightGridIdx(i => Math.min(i, results.length - 2)); }} />
                 )}
@@ -450,7 +448,7 @@ export default function ToolPage({
                       </div>
                       {rightView === 'list' || !multiple ? (
                         <div className="space-y-2 max-h-96 overflow-y-auto">
-                          {results.map((r, i) => <ResultCard key={i} sourceFile={r.sourceFile} result={r.result} seq={sequenceFor(results, i)} onDownload={() => handleDownloadResult(r)} onDelete={() => handleDeleteResult(i)} />)}
+                          {results.map((r, i) => <ResultCard key={i} name={outputNameFor(slug, results, i)} result={r.result} onDownload={() => handleDownloadResult(r)} onDelete={() => handleDeleteResult(i)} />)}
                         </div>
                       ) : (
                         <ResultGridPreview results={results} currentIndex={rightGridIdx} onPrev={() => setRightGridIdx(i => Math.max(0, i - 1))} onNext={() => setRightGridIdx(i => Math.min(results.length - 1, i + 1))} onDownload={() => handleDownloadResult(results[rightGridIdx])} onDelete={() => { handleDeleteResult(rightGridIdx); setRightGridIdx(i => Math.min(i, results.length - 2)); }} />

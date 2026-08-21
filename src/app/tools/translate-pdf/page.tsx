@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import { ArrowLeft, Loader2, Languages, AlertCircle, Copy, Check, FileDown, ShieldAlert } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
-import { extractTextFromPdf, translateText, createPdfFromText, downloadBlob } from '@/lib/pdf-engine';
+import { extractTextFromPdf, translateText, createPdfFromText, downloadBlob, getOutputFilename } from '@/lib/pdf-engine';
 
 const LANGUAGES = [
   'English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Russian',
@@ -63,8 +63,8 @@ export default function TranslatePdfPage() {
   const handleDownloadPdf = useCallback(async () => {
     if (!translated) return;
     const blob = await createPdfFromText(translated, `Translation (${targetLang})`);
-    downloadBlob(blob, files[0]?.name.replace(/\.pdf$/i, `_${targetLang.toLowerCase().replace(/[^a-z]/g, '')}.pdf`) || 'translated.pdf');
-  }, [translated, targetLang, files]);
+    downloadBlob(blob, getOutputFilename('translate-pdf', '.pdf'));
+  }, [translated, targetLang]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(translated);

@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { ArrowLeft, Loader2, Check, AlertCircle, PenTool, Type, Upload, AlertTriangle, X, FileImage } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
-import { readFileAsArrayBuffer, loadPdf, downloadBlob, scanPdfForSigning, type FooterWhitespaceResult, type SignPageScan } from '@/lib/pdf-engine';
+import { readFileAsArrayBuffer, loadPdf, downloadBlob, scanPdfForSigning, getOutputFilename, type FooterWhitespaceResult, type SignPageScan } from '@/lib/pdf-engine';
 
 type SigType = 'draw' | 'type' | 'upload';
 
@@ -238,8 +238,7 @@ export default function SignPdfPage() {
       }
 
       const bytes = await src.save();
-      const outName = files[0].name.replace(/\.pdf$/i, '_signed.pdf');
-      downloadBlob(new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' }), outName);
+      downloadBlob(new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' }), getOutputFilename('sign-pdf', '.pdf'));
       setDone(true);
     } catch (err: any) {
       setError(err.message || 'Failed to sign PDF');
