@@ -595,34 +595,54 @@ export async function summarizePdf(file: File, options: SummaryOptions, onProgre
 
   const extractedText = selected.map(s => sentences[s.i]).join(' ');
 
-  // Abstractive summarization via free LLM
-  onProgress?.('Generating summary with AI...');
-  try {
-    const prompt = `Summarize the following text in about ${options.wordCount} words. Paraphrase it in your own words — do not copy sentences directly. Be clear, concise, and accurate:\n\n${extractedText}`;
-    const res = await fetch('https://text.pollinations.ai/openai/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'openai',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
-      }),
-      signal: AbortSignal.timeout(30000),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      const aiText = data?.choices?.[0]?.message?.content;
-      if (aiText && aiText.trim().length > 50) {
-        const wordCount = tokenize(aiText).length;
-        return { summary: aiText.trim(), wordCount, originalWordCount };
-      }
-    }
-  } catch { /* fall through to extractive */ }
+  // Smart rewrite: compress, deduplicate, clean
+  onProgress?.('Rewriting summary...');
+  const rewritten = smartRewrite(extractedText, options.wordCount);
+  const wordCount = tokenize(rewritten).length;
+  return { summary: rewritten, wordCount, originalWordCount };
+}
 
-  // Extractive fallback if LLM fails
-  const summary = extractedText;
-  const wordCount = tokenize(summary).length;
-  return { summary, wordCount, originalWordCount };
+function smartRewrite(text: string, targetWords: number): string {
+  // Split into sentences
+  const sents = text.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 10);
+  if (sents.length === 0) return text;
+
+  // Remove duplicate/overlapping sentences
+  const unique: string[] = [];
+  for (const s of sents) {
+    const words = tokenize(s);
+    const isDupe = unique.some(u => {
+      const uWords = tokenize(u);
+      const overlap = words.filter(w => uWords.includes(w)).length;
+      return overlap / Math.max(words.length, 1) > 0.6;
+    });
+    if (!isDupe) unique.push(s);
+  }
+
+  // Compress each sentence: remove filler words, redundant phrases
+  const fillers = /\b(very|really|actually|basically|essentially|in order to|due to the fact that|at this point in time|for the purpose of|in the event that|on a daily basis|in the process of|it is important to note that|as a matter of fact|in light of the fact that|with regard to|in terms of|it should be noted that|the fact that|has the ability to|is able to|in addition to|along with|together with)\b/gi;
+  const redundancies = /\b(past history|future plans|free gift|each and every|end result|basic fundamentals|true facts|safe haven|final outcome|important essentials|absolutely essential|each individual|group together|combine together|collaborate together|repeat again|return back|advance forward|descend down|ascend up|rise up|fall down)\b/gi;
+
+  const compressed = unique.map(s => {
+    let c = s.replace(fillers, '').replace(redundancies, '').replace(/\s{2,}/g, ' ').trim();
+    // Capitalize first letter
+    c = c.charAt(0).toUpperCase() + c.slice(1);
+    return c;
+  });
+
+  // Fit to target word count
+  let result: string[] = [];
+  let wordBudget = targetWords;
+  for (const s of compressed) {
+    const wc = tokenize(s).length;
+    if (wc <= wordBudget) {
+      result.push(s);
+      wordBudget -= wc;
+    }
+    if (wordBudget <= 0) break;
+  }
+
+  return result.join(' ');
 }
 
 const LANG_CODES: Record<string, string> = {
