@@ -55,7 +55,7 @@ export default function AiSummarizerPage() {
           <div className="flex items-center gap-3 mb-2">
             <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-pink-50"><Sparkles className="w-6 h-6 text-pink-500" /></div>
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-foreground">AI Summarizer</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Summarizer</h1>
               <p className="text-muted-foreground text-sm sm:text-base">Get an intelligent summary of your PDF document</p>
             </div>
           </div>

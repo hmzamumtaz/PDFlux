@@ -51,7 +51,7 @@ export const tools: ToolInfo[] = [
 
   // AI
   { slug: 'compare-pdf', name: 'Compare PDF', description: 'Compare two PDF files for differences', icon: 'GitCompare', category: 'PDF Intelligence', color: '#7c3aed' },
-  { slug: 'ai-summarizer', name: 'AI Summarizer', description: 'Summarize PDF content with AI', icon: 'Sparkles', category: 'PDF Intelligence', color: '#ec4899' },
+  { slug: 'ai-summarizer', name: 'Summarizer', description: 'Summarize PDF content', icon: 'Sparkles', category: 'PDF Intelligence', color: '#ec4899' },
   { slug: 'translate-pdf', name: 'Translate PDF', description: 'Translate PDF content to any language', icon: 'Languages', category: 'PDF Intelligence', color: '#0ea5e9' },
 ];
 
