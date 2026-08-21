@@ -1,7 +1,6 @@
 'use client';
 
 import ToolPage from '@/components/ToolPage';
-import { htmlToPdf } from '@/lib/pdf-engine';
 
 export default function PowerPointToPdfPage() {
   return (
@@ -11,68 +10,124 @@ export default function PowerPointToPdfPage() {
       processLabel="Convert to PDF"
       onProcess={async (files) => {
         const JSZip = (await import('jszip')).default;
+        const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib');
+
         const buf = await files[0].arrayBuffer();
         const zip = await JSZip.loadAsync(buf);
 
-        // Read presentation.xml to get slide order
-        const presXml = await zip.file('ppt/presentation.xml')?.async('text');
-        if (!presXml) throw new Error('Invalid PPTX file: missing presentation.xml');
+        // Read presentation.xml for slide dimensions
+        const presXml = await zip.file('ppt/presentation.xml')?.async('text') || '';
+        const sldSzMatch = presXml.match(/<p:sldSz[^>]*cx="(\d+)"[^>]*cy="(\d+)"/);
+        // PPTX uses EMUs (English Metric Units): 1 inch = 914400 EMUs, 1 pt = 12700 EMUs
+        const slideW = sldSzMatch ? parseInt(sldSzMatch[1]) / 12700 : 720; // default 10 inches
+        const slideH = sldSzMatch ? parseInt(sldSzMatch[2]) / 12700 : 540; // default 7.5 inches
 
-        // Extract slide IDs from presentation.xml
-        const slideIdMatches = [...presXml.matchAll(/r:id="(rId\d+)"/g)];
-        const relsXml = await zip.file('ppt/_rels/presentation.xml.rels')?.async('text');
-        if (!relsXml) throw new Error('Invalid PPTX: missing relationships');
-
-        // Map rId -> slide filename
+        // Get slide order
+        const relsXml = await zip.file('ppt/_rels/presentation.xml.rels')?.async('text') || '';
+        const presRelMatches = [...presXml.matchAll(/r:id="(rId\d+)"/g)];
         const ridToSlide: Record<string, string> = {};
         for (const m of relsXml.matchAll(/Id="(rId\d+)"[^>]*Target="slides\/(slide\d+\.xml)"/g)) {
           ridToSlide[m[1]] = m[2];
         }
-
-        // Get ordered slide filenames
-        const slideOrder = slideIdMatches
-          .map(m => ridToSlide[m[1]])
-          .filter(Boolean);
-
-        // If parsing fails, fall back to alphabetical
+        const slideOrder = presRelMatches.map(m => ridToSlide[m[1]]).filter(Boolean);
         const slideFiles = slideOrder.length > 0
           ? slideOrder
-          : Object.keys(zip.files)
-              .filter(k => k.match(/^ppt\/slides\/slide\d+\.xml$/))
-              .sort()
-              .map(k => k.replace('ppt/slides/', ''));
+          : Object.keys(zip.files).filter(k => k.match(/^ppt\/slides\/slide\d+\.xml$/)).sort().map(k => k.replace('ppt/slides/', ''));
 
-        const slideTexts: string[] = [];
+        const pdf = await PDFDocument.create();
+        const helvetica = await pdf.embedFont(StandardFonts.Helvetica);
+        const helveticaBold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
         for (const slideFile of slideFiles) {
           const slideXml = await zip.file(`ppt/slides/${slideFile}`)?.async('text');
           if (!slideXml) continue;
 
-          // Extract all text from <a:t> tags (run text) and <a:p> (paragraphs)
-          const paragraphs: string[] = [];
-          const paraMatches = slideXml.match(/<a:p[^>]*>[\s\S]*?<\/a:p>/g) || [];
-          for (const para of paraMatches) {
-            const textRuns = [...para.matchAll(/<a:t>([^<]*)<\/a:t>/g)];
-            const paraText = textRuns.map(m => m[1]).join('');
-            if (paraText.trim()) paragraphs.push(paraText.trim());
+          const page = pdf.addPage([slideW, slideH]);
+
+          // Extract all text frames: <p:sp> elements contain <p:txBody> with <a:p> paragraphs
+          const spMatches = [...slideXml.matchAll(/<p:sp>[\s\S]*?<\/p:sp>/g)];
+
+          for (const sp of spMatches) {
+            const spXml = sp[0];
+
+            // Extract position from <p:spPr> or <a:xfrm>
+            let x = 0, y = 0, w = slideW, h = slideH;
+            const xfrmMatch = spXml.match(/<a:xfrm[^>]*>[\s\S]*?<\/a:xfrm>/);
+            if (xfrmMatch) {
+              const offMatch = xfrmMatch[0].match(/<a:off[^>]*x="(\d+)"[^>]*y="(\d+)"/);
+              const extMatch = xfrmMatch[0].match(/<a:ext[^>]*cx="(\d+)"[^>]*cy="(\d+)"/);
+              if (offMatch) {
+                x = parseInt(offMatch[1]) / 12700;
+                y = parseInt(offMatch[2]) / 12700;
+              }
+              if (extMatch) {
+                w = parseInt(extMatch[1]) / 12700;
+                h = parseInt(extMatch[2]) / 12700;
+              }
+            }
+
+            // Extract paragraphs
+            const paraMatches = [...spXml.matchAll(/<a:p[^>]*>[\s\S]*?<\/a:p>/g)];
+            let paraY = 0;
+
+            for (const para of paraMatches) {
+              const paraXml = para[0];
+
+              // Extract paragraph properties (font size, bold)
+              let fontSize = 12;
+              let isBold = false;
+              const pPrMatch = paraXml.match(/<a:pPr[^>]*>/);
+              if (pPrMatch) {
+                const spcMatch = pPrMatch[0].match(/spcPts="(\d+)"/);
+                // spcPts is in hundredths of a point
+              }
+
+              // Extract text runs
+              const runMatches = [...paraXml.matchAll(/<a:r[^>]*>[\s\S]*?<\/a:r>/g)];
+              let runX = 0;
+
+              for (const run of runMatches) {
+                const runXml = run[0];
+
+                // Run properties
+                const rPrMatch = runXml.match(/<a:rPr[^>]*>/);
+                if (rPrMatch) {
+                  const szMatch = rPrMatch[0].match(/sz="(\d+)"/);
+                  const bMatch = rPrMatch[0].match(/b="1"/);
+                  if (szMatch) fontSize = parseInt(szMatch[1]) / 100; // sz is in hundredths of a point
+                  isBold = !!bMatch;
+                }
+
+                // Text content
+                const tMatch = runXml.match(/<a:t>([^<]*)<\/a:t>/);
+                const text = tMatch ? tMatch[1] : '';
+                if (!text) continue;
+
+                const f = isBold ? helveticaBold : helvetica;
+                const pdfFontSize = Math.min(fontSize, 24); // Cap for readability
+
+                // PDF y is bottom-up, PPT y is top-down
+                const pdfY = slideH - y - paraY - pdfFontSize;
+
+                page.drawText(text, {
+                  x: x + runX,
+                  y: pdfY,
+                  size: pdfFontSize,
+                  font: f,
+                  color: rgb(0.1, 0.1, 0.1),
+                  maxWidth: w - runX,
+                });
+
+                runX += f.widthOfTextAtSize(text, pdfFontSize);
+              }
+
+              paraY += fontSize * 1.2;
+            }
           }
-
-          slideTexts.push(paragraphs.join('\n'));
         }
 
-        // Build HTML for pdf
-        if (slideTexts.length === 0) {
-          throw new Error('No text content found in the presentation.');
-        }
-
-        const slidesHtml = slideTexts.map((text, i) => `
-          <div style="page-break-after: always; padding: 40px 0; ${i < slideTexts.length - 1 ? 'border-bottom: 2px solid #ddd;' : ''}">
-            <div style="font-size: 10px; color: #999; margin-bottom: 8px;">Slide ${i + 1} of ${slideTexts.length}</div>
-            <div style="white-space: pre-wrap; font-family: Arial, sans-serif; font-size: 12pt; line-height: 1.6; color: #333;">${text || '<em style="color:#999">(blank slide)</em>'}</div>
-          </div>
-        `).join('');
-
-        return htmlToPdf(`<div style="font-family: Arial, sans-serif; padding: 30px 40px;">${slidesHtml}</div>`);
+        const bytes = await pdf.save();
+        return new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
       }}
     />
   );
