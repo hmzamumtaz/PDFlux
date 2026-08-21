@@ -1,10 +1,18 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ArrowLeft, Loader2, Check, AlertCircle, PenTool, Type, Upload, AlertTriangle, X, FileImage } from 'lucide-react';
+import { ArrowLeft, Loader2, Check, AlertCircle, PenTool, Type, Upload, AlertTriangle, X, FileImage, Eye, Download, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
+import { Dancing_Script } from 'next/font/google';
 import FileUpload from '@/components/FileUpload';
-import { readFileAsArrayBuffer, loadPdf, downloadBlob, scanPdfForSigning, getOutputFilename, type FooterWhitespaceResult, type SignPageScan } from '@/lib/pdf-engine';
+import { readFileAsArrayBuffer, loadPdf, downloadBlob, scanPdfForSigning, getOutputFilename, getPdfJs, type FooterWhitespaceResult, type SignPageScan } from '@/lib/pdf-engine';
+import { renderTextSignature, trimCanvas, canvasToPngBytes } from '@/lib/signature-render';
+
+/** The handwriting face a typed name is turned into when the user asks for it. */
+const handwriting = Dancing_Script({ weight: '600', subsets: ['latin'], display: 'swap' });
+
+const TYPED_FONT = "Georgia, 'Times New Roman', serif";
+const INK = '#111827';
 
 type SigType = 'draw' | 'type' | 'upload';
 
@@ -12,6 +20,8 @@ type PageInfo = SignPageScan;
 
 const MIN_SIGN_WIDTH = 120;
 const MIN_SIGN_HEIGHT = 30;
+
+const messageOf = (err: unknown, fallback: string) => (err instanceof Error && err.message ? err.message : fallback);
 
 export default function SignPdfPage() {
   const [files, setFiles] = useState<File[]>([]);
@@ -31,6 +41,9 @@ export default function SignPdfPage() {
 
   // Type state
   const [signatureText, setSignatureText] = useState('');
+  /** null until the user answers the handwritten question. */
+  const [handwritten, setHandwritten] = useState<boolean | null>(null);
+  const [typedPreview, setTypedPreview] = useState<string | null>(null);
 
   // Upload state
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
@@ -39,6 +52,14 @@ export default function SignPdfPage() {
   // Warning state
   const [whitespaceWarning, setWhitespaceWarning] = useState<FooterWhitespaceResult | null>(null);
   const [forceSign, setForceSign] = useState(false);
+
+  // Preview-before-download state
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const signedBytes = useRef<Uint8Array | null>(null);
+  const previewToken = useRef(0);
 
   // Scan pages when file is uploaded
   useEffect(() => {
@@ -125,7 +146,7 @@ export default function SignPdfPage() {
     }
     ctx.lineWidth = 3;
     ctx.lineCap = 'round';
-    ctx.strokeStyle = '#111';
+    ctx.strokeStyle = INK;
     ctx.lineTo(x, y);
     ctx.stroke();
     setHasDrawn(true);
@@ -155,97 +176,162 @@ export default function SignPdfPage() {
     reader.readAsDataURL(file);
   }, []);
 
-  const hasSignature = (sigType === 'draw' && hasDrawn) || (sigType === 'type' && signatureText.trim()) || (sigType === 'upload' && uploadedImage);
+  // Render the typed name exactly as it will be stamped, so the preview on the
+  // page and the ink in the PDF can never disagree.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (sigType !== 'type' || !signatureText.trim() || handwritten === null) {
+        if (!cancelled) setTypedPreview(null);
+        return;
+      }
+      try {
+        const canvas = await renderTextSignature(signatureText, {
+          fontFamily: handwritten ? handwriting.style.fontFamily : TYPED_FONT,
+          color: INK,
+        });
+        if (!cancelled) setTypedPreview(canvas ? canvas.toDataURL('image/png') : null);
+      } catch {
+        if (!cancelled) setTypedPreview(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [sigType, signatureText, handwritten]);
+
+  const hasSignature = !!(
+    (sigType === 'draw' && hasDrawn) ||
+    (sigType === 'type' && signatureText.trim() && handwritten !== null) ||
+    (sigType === 'upload' && uploadedImage)
+  );
+
+  /** Produce the signed PDF. Shared by the preview and the download button. */
+  const buildSignedPdf = useCallback(async (): Promise<Uint8Array> => {
+    if (files.length === 0 || selectedPage === null) throw new Error('Select a page to sign first.');
+
+    const buf = await readFileAsArrayBuffer(files[0]);
+    const src = await loadPdf(buf);
+
+    const pageInfo = pages.find(p => p.page === selectedPage);
+    const ws = pageInfo?.whitespace;
+
+    // Draw, type and upload all end up as a transparent PNG, so the stamped
+    // signature is the same pixels the user approved in the preview.
+    let sigBytes: ArrayBuffer;
+    let isPng = true;
+
+    if (sigType === 'draw') {
+      if (!canvasRef.current || !hasDrawn) throw new Error('Draw your signature first.');
+      sigBytes = await canvasToPngBytes(trimCanvas(canvasRef.current, 6));
+    } else if (sigType === 'type') {
+      if (handwritten === null) throw new Error('Choose whether your signature should be handwritten.');
+      const canvas = await renderTextSignature(signatureText, {
+        fontFamily: handwritten ? handwriting.style.fontFamily : TYPED_FONT,
+        color: INK,
+      });
+      if (!canvas) throw new Error('Type your name first.');
+      sigBytes = await canvasToPngBytes(canvas);
+    } else if (sigType === 'upload' && uploadedImage) {
+      sigBytes = await fetch(uploadedImage).then(r => r.arrayBuffer());
+      isPng = uploadedImage.startsWith('data:image/png');
+    } else {
+      throw new Error('Add a signature first.');
+    }
+
+    const pdfPage = src.getPage(selectedPage - 1);
+    const { width: pageW, height: pageH } = pdfPage.getSize();
+
+    // The box the signature must fit inside
+    const inWhitespace = !!(ws && ws.found && (ws.sufficient || forceSign));
+    const boxW = inWhitespace ? Math.max(ws!.width * 0.9, 40) : 150;
+    const boxH = inWhitespace ? Math.max(ws!.height * 0.9, 20) : 50;
+
+    // Size the signature preserving its aspect ratio, clamped to the box.
+    const img = isPng ? await src.embedPng(sigBytes) : await src.embedJpg(sigBytes);
+    const aspect = img.width / img.height;
+    let sigW = Math.min(boxW, 180);
+    let sigH = sigW / aspect;
+    if (sigH > boxH) {
+      sigH = boxH;
+      sigW = sigH * aspect;
+    }
+
+    // Right-aligned inside the whitespace, or bottom-right fallback.
+    let sigX: number, sigY: number;
+    if (inWhitespace) {
+      sigX = ws!.x + ws!.width - sigW;
+      sigY = ws!.y;
+    } else {
+      sigX = pageW - sigW - 40;
+      sigY = 40;
+    }
+    sigX = Math.max(20, Math.min(sigX, pageW - sigW - 20));
+    sigY = Math.max(20, Math.min(sigY, pageH - sigH - 20));
+
+    pdfPage.drawImage(img, { x: sigX, y: sigY, width: sigW, height: sigH });
+
+    return src.save();
+  }, [files, selectedPage, pages, sigType, hasDrawn, handwritten, signatureText, uploadedImage, forceSign]);
+
+  /** Sign, render the signed page to an image, and show it before downloading. */
+  const runPreview = useCallback(async () => {
+    const token = ++previewToken.current;
+    setPreviewBusy(true);
+    setPreviewError(null);
+    try {
+      const bytes = await buildSignedPdf();
+      if (token !== previewToken.current) return;
+      signedBytes.current = bytes;
+
+      const pdfjsLib = await getPdfJs();
+      const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(bytes) }).promise;
+      const page = await pdf.getPage(selectedPage!);
+      const base = page.getViewport({ scale: 1 });
+      const scale = Math.min(2, 1400 / Math.max(base.width, base.height));
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      await page.render({ canvasContext: canvas.getContext('2d')!, viewport, canvas }).promise;
+      if (token !== previewToken.current) return;
+      setPreviewUrl(canvas.toDataURL('image/jpeg', 0.9));
+    } catch (err) {
+      if (token === previewToken.current) setPreviewError(messageOf(err, 'Could not build the preview.'));
+    } finally {
+      if (token === previewToken.current) setPreviewBusy(false);
+    }
+  }, [buildSignedPdf, selectedPage]);
+
+  // Keep an open preview in step with the signature as it is edited.
+  useEffect(() => {
+    if (!previewOpen) return;
+    const timer = setTimeout(() => { runPreview(); }, 350);
+    return () => clearTimeout(timer);
+  }, [previewOpen, runPreview]);
+
+  useEffect(() => {
+    if (!previewOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPreviewOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [previewOpen]);
+
+  const saveSigned = useCallback((bytes: Uint8Array) => {
+    downloadBlob(new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' }), getOutputFilename('sign-pdf', '.pdf'));
+    setDone(true);
+  }, []);
 
   const handleSign = useCallback(async () => {
-    if (files.length === 0 || selectedPage === null || !hasSignature) return;
+    if (!hasSignature) return;
     setProcessing(true);
     setError(null);
     try {
-      const buf = await readFileAsArrayBuffer(files[0]);
-      const src = await loadPdf(buf);
-      const { rgb } = await import('pdf-lib');
-      const { StandardFonts } = await import('pdf-lib');
-
-      const pageInfo = pages.find(p => p.page === selectedPage);
-      const ws = pageInfo?.whitespace;
-
-      // Determine signature image bytes
-      let sigImgBytes: ArrayBuffer | null = null;
-      let sigTextToDraw: string | null = null;
-
-      if (sigType === 'draw' && canvasRef.current) {
-        sigImgBytes = await fetch(canvasRef.current.toDataURL('image/png')).then(r => r.arrayBuffer());
-      } else if (sigType === 'upload' && uploadedImage) {
-        sigImgBytes = await fetch(uploadedImage).then(r => r.arrayBuffer());
-      } else if (sigType === 'type' && signatureText.trim()) {
-        // Standard PDF fonts only encode Latin-1 — strip anything else and
-        // fail with a helpful message instead of a pdf-lib encoding crash.
-        sigTextToDraw = signatureText.trim().replace(/[^\x20-\x7E\xA0-\xFF]/g, '');
-        if (!sigTextToDraw.trim()) {
-          throw new Error('Typed signatures only support Latin characters. Please draw or upload your signature instead.');
-        }
-      }
-
-      const pdfPage = src.getPage(selectedPage - 1);
-      const { width: pageW, height: pageH } = pdfPage.getSize();
-
-      // The box the signature must fit inside
-      const inWhitespace = !!(ws && ws.found && (ws.sufficient || forceSign));
-      const boxW = inWhitespace ? Math.max(ws!.width * 0.9, 40) : 150;
-      const boxH = inWhitespace ? Math.max(ws!.height * 0.9, 20) : 50;
-
-      // Size the signature preserving its aspect ratio, clamped to the box.
-      let img: Awaited<ReturnType<typeof src.embedPng>> | null = null;
-      if (sigImgBytes) {
-        const isPng = sigType === 'draw' || !!uploadedImage?.startsWith('data:image/png');
-        img = isPng ? await src.embedPng(sigImgBytes) : await src.embedJpg(sigImgBytes);
-      }
-      const aspect = img ? img.width / img.height : 3;
-      let sigW = Math.min(boxW, 180);
-      let sigH = sigW / aspect;
-      if (sigH > boxH) {
-        sigH = boxH;
-        sigW = sigH * aspect;
-      }
-
-      // Right-aligned inside the whitespace, or bottom-right fallback.
-      let sigX: number, sigY: number;
-      if (inWhitespace) {
-        sigX = ws!.x + ws!.width - sigW;
-        sigY = ws!.y;
-      } else {
-        sigX = pageW - sigW - 40;
-        sigY = 40;
-      }
-      sigX = Math.max(20, Math.min(sigX, pageW - sigW - 20));
-      sigY = Math.max(20, Math.min(sigY, pageH - sigH - 20));
-
-      if (img) {
-        pdfPage.drawImage(img, { x: sigX, y: sigY, width: sigW, height: sigH });
-      } else if (sigTextToDraw) {
-        const font = await src.embedFont(StandardFonts.HelveticaBold);
-        let fontSize = Math.min(sigH * 0.9, 20);
-        // Shrink until the name fits the available width.
-        while (fontSize > 6 && font.widthOfTextAtSize(sigTextToDraw, fontSize) > sigW) fontSize -= 1;
-        pdfPage.drawText(sigTextToDraw, {
-          x: sigX,
-          y: sigY + sigH / 2 - fontSize / 3,
-          size: fontSize,
-          font,
-          color: rgb(0.1, 0.1, 0.1),
-        });
-      }
-
-      const bytes = await src.save();
-      downloadBlob(new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' }), getOutputFilename('sign-pdf', '.pdf'));
-      setDone(true);
-    } catch (err: any) {
-      setError(err.message || 'Failed to sign PDF');
+      saveSigned(await buildSignedPdf());
+    } catch (err) {
+      setError(messageOf(err, 'Failed to sign PDF'));
     } finally {
       setProcessing(false);
     }
-  }, [files, selectedPage, sigType, hasSignature, pages, uploadedImage, signatureText, forceSign]);
+  }, [hasSignature, buildSignedPdf, saveSigned]);
 
   const pageInfo = pages.find(p => p.page === selectedPage);
 
@@ -435,19 +521,52 @@ export default function SignPdfPage() {
 
               {/* Type signature */}
               {sigType === 'type' && (
-                <div className="animate-fade-in">
-                  <label className="block text-sm font-medium text-foreground mb-2">Type your name</label>
-                  <input
-                    type="text"
-                    value={signatureText}
-                    onChange={(e) => setSignatureText(e.target.value)}
-                    placeholder="Your signature"
-                    className="w-full max-w-sm px-4 py-2.5 border border-border rounded-lg text-lg font-serif focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  />
-                  {signatureText && (
-                    <div className="mt-3 px-4 py-3 bg-gray-50 rounded-xl border border-border">
-                      <p className="text-xs text-muted-foreground mb-1">Preview</p>
-                      <p className="text-2xl font-serif text-foreground italic">{signatureText}</p>
+                <div className="animate-fade-in space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">Type your name</label>
+                    <input
+                      type="text"
+                      value={signatureText}
+                      onChange={(e) => setSignatureText(e.target.value)}
+                      placeholder="Your signature"
+                      className="w-full max-w-sm px-4 py-2.5 border border-border rounded-lg text-lg font-serif focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    />
+                  </div>
+
+                  {/* The one question: should the typed name become handwriting? */}
+                  {signatureText.trim() && (
+                    <div className="p-4 rounded-xl border border-border bg-gray-50 animate-fade-in">
+                      <p className="text-sm font-semibold text-foreground">Would you like your signature handwritten?</p>
+                      <p className="text-xs text-muted-foreground mt-1 mb-3">
+                        We&apos;ll turn what you typed into a handwritten signature and place it on the document.
+                      </p>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => setHandwritten(true)}
+                          className={`px-4 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
+                            handwritten === true ? 'border-primary bg-primary/5 text-foreground' : 'border-border text-muted-foreground hover:border-gray-300'
+                          }`}
+                        >
+                          Yes, make it handwritten
+                        </button>
+                        <button
+                          onClick={() => setHandwritten(false)}
+                          className={`px-4 py-2 rounded-lg text-sm font-medium border-2 transition-all ${
+                            handwritten === false ? 'border-primary bg-primary/5 text-foreground' : 'border-border text-muted-foreground hover:border-gray-300'
+                          }`}
+                        >
+                          No, keep it typed
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {typedPreview && (
+                    <div className="px-4 py-3 bg-white rounded-xl border border-border">
+                      <p className="text-xs text-muted-foreground mb-2">
+                        {handwritten ? 'Your handwritten signature' : 'Your typed signature'}
+                      </p>
+                      <img src={typedPreview} alt="Signature preview" className="max-h-16" />
                     </div>
                   )}
                 </div>
@@ -525,21 +644,96 @@ export default function SignPdfPage() {
                 </div>
               )}
 
-              <button
-                onClick={handleSign}
-                disabled={processing || done || !hasSignature}
-                className={`px-8 py-3.5 rounded-xl font-semibold text-sm transition-all flex items-center gap-2 ${
-                  done ? 'bg-green-500 text-white' : 'bg-primary hover:bg-primary-hover text-white hover:shadow-lg active:scale-[0.98]'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                {processing ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing...</> :
-                 done ? <><Check className="w-4 h-4" /> Download Ready</> :
-                 <><PenTool className="w-4 h-4" /> Sign & Download</>}
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  onClick={handleSign}
+                  disabled={processing || done || !hasSignature}
+                  className={`px-8 py-3.5 rounded-xl font-semibold text-sm transition-all flex items-center gap-2 ${
+                    done ? 'bg-green-500 text-white' : 'bg-primary hover:bg-primary-hover text-white hover:shadow-lg active:scale-[0.98]'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {processing ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing...</> :
+                   done ? <><Check className="w-4 h-4" /> Download Ready</> :
+                   <><PenTool className="w-4 h-4" /> Sign & Download</>}
+                </button>
+
+                <button
+                  onClick={() => { setPreviewUrl(null); setPreviewOpen(true); }}
+                  disabled={!hasSignature}
+                  className="px-6 py-3.5 rounded-xl font-semibold text-sm border border-border text-foreground hover:bg-gray-50 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Eye className="w-4 h-4" />
+                  Preview before download
+                </button>
+              </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* Signed-page preview */}
+      {previewOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 overflow-y-auto" onClick={() => setPreviewOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl my-8" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <div>
+                <h2 className="text-sm font-semibold text-foreground">Preview — signed page {selectedPage}</h2>
+                <p className="text-xs text-muted-foreground">This is exactly what will be downloaded.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => runPreview()}
+                  disabled={previewBusy}
+                  className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-gray-100 transition-colors disabled:opacity-50"
+                  aria-label="Refresh preview"
+                >
+                  <RefreshCw className={`w-4 h-4 ${previewBusy ? 'animate-spin' : ''}`} />
+                </button>
+                <button
+                  onClick={() => setPreviewOpen(false)}
+                  className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-gray-100 transition-colors"
+                  aria-label="Close preview"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-5 min-h-[240px] flex items-center justify-center bg-gray-50">
+              {previewBusy && !previewUrl && (
+                <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Placing your signature...
+                </div>
+              )}
+              {previewError && (
+                <div className="flex items-center gap-3 text-sm text-destructive">
+                  <AlertCircle className="w-5 h-5 shrink-0" /> {previewError}
+                </div>
+              )}
+              {previewUrl && !previewError && (
+                <img src={previewUrl} alt={`Signed page ${selectedPage}`} className="max-w-full rounded-lg border border-border shadow-sm bg-white" />
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border">
+              <button
+                onClick={() => setPreviewOpen(false)}
+                className="px-4 py-2.5 rounded-xl text-sm font-medium border border-border text-foreground hover:bg-gray-50 transition-colors"
+              >
+                Keep editing
+              </button>
+              <button
+                onClick={() => { if (signedBytes.current) { saveSigned(signedBytes.current); setPreviewOpen(false); } }}
+                disabled={previewBusy || !previewUrl}
+                className="px-6 py-2.5 rounded-xl text-sm font-semibold bg-primary hover:bg-primary-hover text-white transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Download className="w-4 h-4" />
+                Download signed PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
