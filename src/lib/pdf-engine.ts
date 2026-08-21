@@ -329,6 +329,10 @@ export async function htmlToPdf(html: string): Promise<Blob> {
   const { default: html2canvas } = await import('html2canvas');
   const { jsPDF } = await import('jspdf');
 
+  const A4_W = 595.28;
+  const A4_H = 841.89;
+  const MARGIN = 0;
+
   const renderToCanvas = async (content: string) => {
     const container = document.createElement('div');
     container.innerHTML = content;
@@ -336,6 +340,7 @@ export async function htmlToPdf(html: string): Promise<Blob> {
     container.style.padding = '40px';
     container.style.position = 'fixed';
     container.style.left = '-9999px';
+    container.style.top = '0';
     container.style.background = 'white';
     document.body.appendChild(container);
     try {
@@ -355,11 +360,44 @@ export async function htmlToPdf(html: string): Promise<Blob> {
   }
 
   const imgData = canvas.toDataURL('image/png');
-  const imgWidth = 595.28;
-  const imgHeight = (canvas.height * imgWidth) / canvas.width;
+  const imgWidth = A4_W;
+  const totalImgHeight = (canvas.height * imgWidth) / canvas.width;
 
   const pdf = new jsPDF('p', 'pt', 'a4');
-  pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+
+  if (totalImgHeight <= A4_H) {
+    // Fits on one page
+    pdf.addImage(imgData, 'PNG', MARGIN, MARGIN, imgWidth - MARGIN * 2, totalImgHeight);
+  } else {
+    // Multi-page: slice the canvas into page-sized chunks
+    const pageImgHeight = A4_H;
+    const sourcePageHeight = (canvas.height * (A4_W / canvas.width)); // in PDF pts per source canvas px
+    const sourceSliceHeight = canvas.height / totalImgHeight * A4_H; // source canvas pixels per PDF page
+
+    let remainingHeight = canvas.height;
+    let sourceY = 0;
+    let isFirstPage = true;
+
+    while (remainingHeight > 0) {
+      if (!isFirstPage) pdf.addPage();
+
+      const sliceH = Math.min(sourceSliceHeight, remainingHeight);
+      // Create a temporary canvas for this slice
+      const sliceCanvas = document.createElement('canvas');
+      sliceCanvas.width = canvas.width;
+      sliceCanvas.height = Math.ceil(sliceH);
+      const sliceCtx = sliceCanvas.getContext('2d')!;
+      sliceCtx.drawImage(canvas, 0, sourceY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+
+      const sliceData = sliceCanvas.toDataURL('image/png');
+      const slicePdfH = (sliceH * A4_W) / canvas.width;
+      pdf.addImage(sliceData, 'PNG', MARGIN, MARGIN, A4_W - MARGIN * 2, slicePdfH);
+
+      sourceY += sliceH;
+      remainingHeight -= sliceH;
+      isFirstPage = false;
+    }
+  }
 
   return new Blob([pdf.output('arraybuffer')], { type: 'application/pdf' });
 }
@@ -369,7 +407,7 @@ export async function wordToPdf(file: File): Promise<Blob> {
   const buf = await readFileAsArrayBuffer(file);
   const result = await mammoth.convertToHtml({ arrayBuffer: buf });
   const html = result.value;
-  return htmlToPdf(`<div style="font-family: Arial, sans-serif; font-size: 12px; line-height: 1.6;">${html}</div>`);
+  return htmlToPdf(`<div style="font-family: Georgia, 'Times New Roman', serif; font-size: 12pt; line-height: 1.8; color: #222; max-width: 700px; margin: 0 auto;">${html}</div>`);
 }
 
 export async function redactPdf(file: File, redactions: { x: number; y: number; width: number; height: number; pageIndex: number }[]): Promise<Blob> {
@@ -831,26 +869,40 @@ export async function extractTextFromPdf(file: File): Promise<string[]> {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    let lastY = 0;
+    let lastY: number | null = null;
     let pageText = '';
 
     for (const item of content.items) {
-      if ('str' in item) {
-        const textItem = item as any;
-        if (lastY && textItem.y !== undefined && Math.abs(textItem.y - lastY) > 5) {
+      if (!('str' in item)) continue;
+      const ti = item as any;
+      // pdf.js TextItem coordinates: transform[5] is the Y position (top-down in canvas coords)
+      const y = ti.transform?.[5] ?? ti.y ?? null;
+
+      if (y !== null && lastY !== null) {
+        const deltaY = Math.abs(y - lastY);
+        if (deltaY > 5) {
           pageText += '\n';
+        } else if (deltaY < 1 && pageText.length > 0 && pageText.slice(-1) !== '\n' && pageText.slice(-1) !== ' ') {
+          // Same line, no space between items — add a space separator
+          const prevChar = pageText.slice(-1);
+          const nextChar = (item.str || '')[0];
+          if (prevChar !== ' ' && nextChar !== ' ' && prevChar !== '\n') {
+            pageText += ' ';
+          }
         }
-        pageText += item.str;
-        if (textItem.y !== undefined) lastY = textItem.y;
       }
+
+      pageText += item.str || '';
+      if (y !== null) lastY = y;
     }
-    pages.push(pageText);
+
+    pages.push(pageText.trim());
   }
   return pages;
 }
 
 export async function pdfToWord(file: File): Promise<Blob> {
-  const { Document, Packer, Paragraph, TextRun, HeadingLevel, PageBreak } = await import('docx');
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel, PageBreak, AlignmentType } = await import('docx');
   const pages = await extractTextFromPdf(file);
 
   const children: any[] = [];
@@ -858,22 +910,56 @@ export async function pdfToWord(file: File): Promise<Blob> {
     if (i > 0) {
       children.push(new Paragraph({ children: [new PageBreak()] }));
     }
+
+    // Page heading
+    children.push(new Paragraph({
+      heading: HeadingLevel.HEADING_1,
+      spacing: { after: 200 },
+      children: [new TextRun({ text: `Page ${i + 1}`, bold: true, size: 28 })],
+    }));
+
+    if (!pageText.trim()) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: '(empty page)', italics: true, color: '999999' })],
+      }));
+      return;
+    }
+
     const lines = pageText.split('\n');
-    lines.forEach((line, lineIdx) => {
-      if (lineIdx === 0 && line.trim()) {
+    lines.forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      // Detect if line looks like a heading (short, no period, capitalized)
+      const isHeading = trimmed.length < 80
+        && !trimmed.endsWith('.')
+        && /^[A-Z]/.test(trimmed)
+        && !trimmed.includes('  ');
+
+      if (isHeading) {
         children.push(new Paragraph({
           heading: HeadingLevel.HEADING_2,
-          children: [new TextRun({ text: `Page ${i + 1}`, bold: true })],
+          spacing: { before: 240, after: 120 },
+          children: [new TextRun({ text: trimmed, bold: true, size: 24 })],
+        }));
+      } else {
+        children.push(new Paragraph({
+          spacing: { after: 120 },
+          children: [new TextRun({ text: trimmed, size: 22 })],
         }));
       }
-      children.push(new Paragraph({
-        children: [new TextRun({ text: line })],
-      }));
     });
   });
 
   const doc = new Document({
-    sections: [{ properties: {}, children }],
+    sections: [{
+      properties: {
+        page: {
+          margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+        },
+      },
+      children,
+    }],
   });
 
   const blob = await Packer.toBlob(doc);
@@ -888,17 +974,38 @@ export async function pdfToExcel(file: File): Promise<Blob> {
   workbook.creator = 'PDFlux';
   workbook.created = new Date();
 
+  // Summary sheet
+  const summary = workbook.addWorksheet('Summary', { properties: { tabColor: { argb: '4472C4' } } });
+  summary.columns = [
+    { header: 'Page', key: 'page', width: 10 },
+    { header: 'Lines', key: 'lines', width: 10 },
+    { header: 'Characters', key: 'chars', width: 15 },
+  ];
+  summary.getRow(1).font = { bold: true, size: 11 };
+  summary.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D6E4F0' } };
+
+  pages.forEach((pageText, i) => {
+    const lines = pageText.split('\n').filter(l => l.trim());
+    summary.addRow({ page: i + 1, lines: lines.length, chars: pageText.length });
+  });
+
+  // One sheet per page
   pages.forEach((pageText, i) => {
     const sheet = workbook.addWorksheet(`Page ${i + 1}`);
-    sheet.columns = [{ header: 'Text Content', key: 'text', width: 80 }];
+    sheet.columns = [
+      { header: '#', key: 'num', width: 6 },
+      { header: 'Content', key: 'content', width: 90 },
+    ];
+    sheet.getRow(1).font = { bold: true, size: 11 };
+    sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D6E4F0' } };
 
     const lines = pageText.split('\n').filter(l => l.trim());
-    lines.forEach(line => {
-      sheet.addRow({ text: line });
-    });
-
     if (lines.length === 0) {
-      sheet.addRow({ text: '(empty page)' });
+      sheet.addRow({ num: 1, content: '(empty page)' });
+    } else {
+      lines.forEach((line, idx) => {
+        sheet.addRow({ num: idx + 1, content: line.trim() });
+      });
     }
   });
 
@@ -914,26 +1021,44 @@ export async function pdfToPowerpoint(file: File): Promise<Blob> {
   pptx.author = 'PDFlux';
   pptx.title = file.name.replace(/\.pdf$/i, '');
 
-  pages.forEach((pageText, i) => {
-    const slide = pptx.addSlide();
-    slide.addText(`Page ${i + 1}`, {
-      x: 0.5,
-      y: 0.3,
-      w: '90%',
-      fontSize: 18,
-      bold: true,
-      color: '333333',
-    });
+  const MAX_CHARS_PER_SLIDE = 1800;
 
-    slide.addText(pageText || '(empty page)', {
-      x: 0.5,
-      y: 1.0,
-      w: '90%',
-      h: '80%',
-      fontSize: 11,
-      color: '444444',
-      valign: 'top',
-      wrap: true,
+  pages.forEach((pageText, i) => {
+    if (!pageText.trim()) {
+      const slide = pptx.addSlide();
+      slide.addText(`Page ${i + 1}`, { x: 0.5, y: 0.3, w: '90%', fontSize: 18, bold: true, color: '333333' });
+      slide.addText('(empty page)', { x: 0.5, y: 1.0, w: '90%', h: '70%', fontSize: 11, color: '999999', valign: 'top', italic: true });
+      return;
+    }
+
+    // Split long pages into multiple slides
+    const chunks: string[] = [];
+    if (pageText.length <= MAX_CHARS_PER_SLIDE) {
+      chunks.push(pageText);
+    } else {
+      const lines = pageText.split('\n');
+      let current = '';
+      for (const line of lines) {
+        if ((current + '\n' + line).length > MAX_CHARS_PER_SLIDE && current) {
+          chunks.push(current);
+          current = line;
+        } else {
+          current = current ? current + '\n' + line : line;
+        }
+      }
+      if (current) chunks.push(current);
+    }
+
+    chunks.forEach((chunk, ci) => {
+      const slide = pptx.addSlide();
+      const label = chunks.length > 1 ? `Page ${i + 1} (${ci + 1}/${chunks.length})` : `Page ${i + 1}`;
+      slide.addText(label, { x: 0.5, y: 0.2, w: '90%', fontSize: 16, bold: true, color: '333333' });
+      slide.addText(chunk, {
+        x: 0.5, y: 0.8, w: '90%', h: '85%',
+        fontSize: 10, color: '444444', valign: 'top', wrap: true,
+        fontFace: 'Consolas',
+        lineSpacingMultiple: 1.1,
+      });
     });
   });
 
