@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import ToolPage from '@/components/ToolPage';
 import PdfPreview from '@/components/PdfPreview';
-import { removePagesFromFile, getPdfInfo } from '@/lib/pdf-engine';
+import { removePagesFromFile, getPdfInfo, parsePageSpec } from '@/lib/pdf-engine';
 
 export default function RemovePagesPage() {
   const [pagesToRemove, setPagesToRemove] = useState('');
@@ -22,13 +22,14 @@ export default function RemovePagesPage() {
     }
   }, []);
 
-  const parsePages = (input: string): number[] => {
-    return input.split(',').map(p => parseInt(p.trim())).filter(n => !isNaN(n) && n > 0);
-  };
-
   const remainingPages = useMemo(() => {
     if (!pdfInfo) return [];
-    const remove = parsePages(pagesToRemove);
+    let remove: number[] = [];
+    try {
+      remove = parsePageSpec(pagesToRemove, pdfInfo.totalPages);
+    } catch {
+      // ignore while the user is still typing; onProcess reports real errors
+    }
     return Array.from({ length: pdfInfo.totalPages }, (_, i) => i + 1).filter(p => !remove.includes(p));
   }, [pdfInfo, pagesToRemove]);
 
@@ -66,8 +67,9 @@ export default function RemovePagesPage() {
         </div>
       }
       onProcess={async (files) => {
-        const pages = parsePages(pagesToRemove);
-        if (pages.length === 0) throw new Error('Please enter pages to remove');
+        const info = await getPdfInfo(files[0]);
+        const pages = parsePageSpec(pagesToRemove, info.pageCount);
+        if (pages.length === 0) throw new Error('Please enter pages to remove (e.g., 1, 3, 5-8)');
         return removePagesFromFile(files[0], pages);
       }}
     />

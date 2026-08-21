@@ -53,7 +53,7 @@ export default function Footer() {
 
         <div className="border-t border-gray-800 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-xs">
-            &copy; {new Date().getFullYear()} PDFlux. All files are processed locally in your browser. Nothing is uploaded.
+            &copy; {new Date().getFullYear()} PDFlux. Files are processed locally in your browser — only the optional Translate tool contacts an online service.
           </p>
           <div className="flex items-center gap-4 text-xs">
             <span>No file size limits</span>

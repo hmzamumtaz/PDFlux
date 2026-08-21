@@ -36,7 +36,11 @@ export default function RedactPdfPage() {
               placeholder="50,100,200,30&#10;50,200,200,30"
               className="w-full px-4 py-2.5 border border-border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary resize-y"
             />
-            <p className="mt-1 text-xs text-muted-foreground">Format: x,y,width,height (one per line, in points)</p>
+            <p className="mt-1 text-xs text-muted-foreground">Format: x,y,width,height (one per line, in points; origin is the bottom-left corner)</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Redacted pages are flattened so the content underneath is permanently
+              destroyed — not just covered by a black box.
+            </p>
           </div>
         </div>
       }

@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import { ArrowLeft, Loader2, Sparkles, AlertCircle, CheckCircle2, Copy, Check } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
-import { summarizePdf } from '@/lib/summarizer';
+import { summarizePdf, SummaryResult } from '@/lib/summarizer';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -16,7 +16,7 @@ export default function AiSummarizerPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState('');
-  const [result, setResult] = useState<{ summary: string; wordCount: number; originalWordCount: number } | null>(null);
+  const [result, setResult] = useState<SummaryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -117,9 +117,26 @@ export default function AiSummarizerPage() {
 
               <div className="p-6 bg-gradient-to-br from-pink-50 to-purple-50 rounded-xl border border-pink-200">
                 <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-pink-500" /> Summary
+                  <Sparkles className="w-4 h-4 text-pink-500" /> Key points
                 </h3>
-                <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{result.summary}</p>
+                <ul className="space-y-2">
+                  {result.keyPoints.map((point, i) => (
+                    <li key={i} className="text-sm text-foreground leading-relaxed flex gap-2">
+                      <span className="text-pink-500 shrink-0">•</span>
+                      <span>{point}</span>
+                    </li>
+                  ))}
+                </ul>
+                {result.keywords.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-pink-200/60">
+                    <p className="text-xs font-semibold text-muted-foreground mb-2">Top topics</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {result.keywords.map(kw => (
+                        <span key={kw} className="px-2.5 py-1 bg-white/70 text-pink-700 rounded-lg text-xs font-medium border border-pink-200">{kw}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3">

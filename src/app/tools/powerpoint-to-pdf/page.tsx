@@ -38,15 +38,28 @@ export default function PowerPointToPdfPage() {
         const helvetica = await pdf.embedFont(StandardFonts.Helvetica);
         const helveticaBold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
+        // Decode the XML entities OOXML escapes inside <a:t> (&amp;, &#8217;, ...)
+        function decodeEntities(text: string): string {
+          return text
+            .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+            .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&apos;/g, "'")
+            .replace(/&amp;/g, '&');
+        }
+
         function sanitize(text: string): string {
-          return text.replace(/[\u{1F000}-\u{1FFFF}]/gu, '?')
+          return decodeEntities(text)
+            .replace(/[\u{1F000}-\u{1FFFF}]/gu, '?')
             .replace(/[\u{2600}-\u{27BF}]/gu, '-')
             .replace(/[^\x20-\x7E\xA0-\xFF]/g, c => {
               const code = c.charCodeAt(0);
-              if (code >= 0x20 && code <= 0x7E) return c;
-              if (code >= 0xA0 && code <= 0xFF) return c;
               if (code === 0x2013 || code === 0x2014) return '-';
               if (code === 0x2026) return '...';
+              if (code === 0x2018 || code === 0x2019) return "'";
+              if (code === 0x201C || code === 0x201D) return '"';
               return '';
             });
         }
@@ -64,7 +77,7 @@ export default function PowerPointToPdfPage() {
             const spXml = sp[0];
 
             // Extract position from <p:spPr> or <a:xfrm>
-            let x = 0, y = 0, w = slideW, h = slideH;
+            let x = 0, y = 0, w = slideW;
             const xfrmMatch = spXml.match(/<a:xfrm[^>]*>[\s\S]*?<\/a:xfrm>/);
             if (xfrmMatch) {
               const offMatch = xfrmMatch[0].match(/<a:off[^>]*x="(\d+)"[^>]*y="(\d+)"/);
@@ -75,7 +88,6 @@ export default function PowerPointToPdfPage() {
               }
               if (extMatch) {
                 w = parseInt(extMatch[1]) / 12700;
-                h = parseInt(extMatch[2]) / 12700;
               }
             }
 
@@ -86,56 +98,71 @@ export default function PowerPointToPdfPage() {
             for (const para of paraMatches) {
               const paraXml = para[0];
 
-              // Extract paragraph properties (font size, bold)
-              let fontSize = 12;
-              let isBold = false;
-              const pPrMatch = paraXml.match(/<a:pPr[^>]*>/);
-              if (pPrMatch) {
-                const spcMatch = pPrMatch[0].match(/spcPts="(\d+)"/);
-                // spcPts is in hundredths of a point
-              }
-
-              // Extract text runs
-              const runMatches = [...paraXml.matchAll(/<a:r[^>]*>[\s\S]*?<\/a:r>/g)];
-              let runX = 0;
+              // Collect the paragraph's runs as word tokens, each with its own
+              // style (no state leaking between runs), then wrap manually so
+              // wrapped lines advance the cursor instead of overprinting.
+              type Token = { text: string; size: number; bold: boolean };
+              const tokens: Token[] = [];
+              const runMatches = [...paraXml.matchAll(/<a:(?:r|br)[^>]*(?:\/>|>[\s\S]*?<\/a:r>)/g)];
 
               for (const run of runMatches) {
                 const runXml = run[0];
-
-                // Run properties
+                if (runXml.startsWith('<a:br')) {
+                  tokens.push({ text: '\n', size: 12, bold: false });
+                  continue;
+                }
+                let size = 12;
+                let bold = false;
                 const rPrMatch = runXml.match(/<a:rPr[^>]*>/);
                 if (rPrMatch) {
                   const szMatch = rPrMatch[0].match(/sz="(\d+)"/);
-                  const bMatch = rPrMatch[0].match(/b="1"/);
-                  if (szMatch) fontSize = parseInt(szMatch[1]) / 100; // sz is in hundredths of a point
-                  isBold = !!bMatch;
+                  if (szMatch) size = parseInt(szMatch[1]) / 100; // hundredths of a point
+                  bold = /\bb="1"/.test(rPrMatch[0]);
                 }
-
-                // Text content
-                const tMatch = runXml.match(/<a:t>([^<]*)<\/a:t>/);
-                const rawText = tMatch ? tMatch[1] : '';
-                if (!rawText) continue;
-                const text = sanitize(rawText);
-
-                const f = isBold ? helveticaBold : helvetica;
-                const pdfFontSize = Math.min(fontSize, 24); // Cap for readability
-
-                // PDF y is bottom-up, PPT y is top-down
-                const pdfY = slideH - y - paraY - pdfFontSize;
-
-                page.drawText(text, {
-                  x: x + runX,
-                  y: pdfY,
-                  size: pdfFontSize,
-                  font: f,
-                  color: rgb(0.1, 0.1, 0.1),
-                  maxWidth: w - runX,
-                });
-
-                runX += f.widthOfTextAtSize(text, pdfFontSize);
+                const tMatch = runXml.match(/<a:t>([\s\S]*?)<\/a:t>/);
+                const text = tMatch ? sanitize(tMatch[1]) : '';
+                for (const word of text.split(/\s+/)) {
+                  if (word) tokens.push({ text: word, size: Math.min(size, 28), bold });
+                }
               }
 
-              paraY += fontSize * 1.2;
+              if (tokens.length === 0) { paraY += 12 * 1.2; continue; }
+
+              // Greedy word-wrap within the shape width
+              let line: Token[] = [];
+              let lineW = 0;
+              const flushLine = () => {
+                if (line.length === 0) return;
+                const lineSize = Math.max(...line.map(t => t.size));
+                const pdfY = slideH - y - paraY - lineSize;
+                let runX = 0;
+                for (const tok of line) {
+                  if (pdfY < 4) break; // stop when text overflows the slide bottom
+                  const f = tok.bold ? helveticaBold : helvetica;
+                  page.drawText(tok.text, {
+                    x: x + runX,
+                    y: pdfY,
+                    size: tok.size,
+                    font: f,
+                    color: rgb(0.1, 0.1, 0.1),
+                  });
+                  runX += f.widthOfTextAtSize(tok.text + ' ', tok.size);
+                }
+                paraY += lineSize * 1.2;
+                line = [];
+                lineW = 0;
+              };
+
+              const maxLineW = Math.max(w - 4, 40);
+              for (const tok of tokens) {
+                if (tok.text === '\n') { flushLine(); continue; }
+                const f = tok.bold ? helveticaBold : helvetica;
+                const tw = f.widthOfTextAtSize(tok.text + ' ', tok.size);
+                if (lineW + tw > maxLineW && line.length > 0) flushLine();
+                line.push(tok);
+                lineW += tw;
+              }
+              flushLine();
             }
           }
         }

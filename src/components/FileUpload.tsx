@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useState, useRef } from 'react';
-import { Upload, FileText, X, Plus, CheckSquare, Square } from 'lucide-react';
+import { Upload, FileText, X, Plus, CheckSquare, Square, MinusSquare } from 'lucide-react';
 
 interface FileUploadProps {
   accept?: string;
@@ -37,6 +37,7 @@ export default function FileUpload({
   selectable = false,
 }: FileUploadProps) {
   const [isDragOver, setIsDragOver] = useState(false);
+  const [dropError, setDropError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -49,17 +50,38 @@ export default function FileUpload({
     setIsDragOver(false);
   }, []);
 
+  // Dropped files bypass <input accept>, so enforce the filter here too —
+  // otherwise a dropped .txt reaches the PDF parser and dies cryptically.
+  const matchesAccept = useCallback((file: File) => {
+    if (!accept) return true;
+    const rules = accept.split(',').map(r => r.trim().toLowerCase()).filter(Boolean);
+    const name = file.name.toLowerCase();
+    const type = (file.type || '').toLowerCase();
+    return rules.some(rule => {
+      if (rule.startsWith('.')) return name.endsWith(rule);
+      if (rule.endsWith('/*')) return type.startsWith(rule.slice(0, -1));
+      return type === rule;
+    });
+  }, [accept]);
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    const droppedFiles = Array.from(e.dataTransfer.files).slice(0, maxFiles);
-    if (droppedFiles.length > 0) {
-      onFilesSelected(droppedFiles);
+    const dropped = Array.from(e.dataTransfer.files);
+    const accepted = dropped.filter(matchesAccept).slice(0, Math.max(0, maxFiles - files.length));
+    if (accepted.length === 0 && dropped.length > 0) {
+      setDropError(`Only ${accept.replace(/\./g, '').toUpperCase()} files are supported here.`);
+      return;
     }
-  }, [maxFiles, onFilesSelected]);
+    setDropError(null);
+    if (accepted.length > 0) {
+      onFilesSelected(multiple ? accepted : accepted.slice(0, 1));
+    }
+  }, [accept, files.length, matchesAccept, maxFiles, multiple, onFilesSelected]);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = Array.from(e.target.files || []).slice(0, maxFiles - files.length);
+    setDropError(null);
+    const selectedFiles = Array.from(e.target.files || []).slice(0, Math.max(0, maxFiles - files.length));
     if (selectedFiles.length > 0) {
       onFilesSelected(selectedFiles);
     }
@@ -105,6 +127,7 @@ export default function FileUpload({
             onChange={handleChange}
             className="hidden"
           />
+          {dropError && <p className="mt-3 text-xs text-destructive font-medium">{dropError}</p>}
         </div>
       ) : (
         <div className="space-y-3">
@@ -115,7 +138,7 @@ export default function FileUpload({
                 onClick={onToggleAll}
                 className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
               >
-                {allSelected ? <CheckSquare className="w-4 h-4 text-primary" /> : <Square className="w-4 h-4" />}
+                {allSelected ? <CheckSquare className="w-4 h-4 text-primary" /> : someSelected ? <MinusSquare className="w-4 h-4 text-primary" /> : <Square className="w-4 h-4" />}
                 {allSelected ? 'Deselect all' : 'Select all'}
               </button>
               <span className="text-xs text-muted-foreground">

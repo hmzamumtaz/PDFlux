@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { ArrowLeft, Loader2, Languages, AlertCircle, Copy, Check } from 'lucide-react';
+import { ArrowLeft, Loader2, Languages, AlertCircle, Copy, Check, FileDown, ShieldAlert } from 'lucide-react';
 import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
-import { extractTextFromPdf, translateText } from '@/lib/pdf-engine';
+import { extractTextFromPdf, translateText, createPdfFromText, downloadBlob, getOutputFilename } from '@/lib/pdf-engine';
 
 const LANGUAGES = [
   'English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Russian',
@@ -25,6 +25,7 @@ function formatBytes(bytes: number): string {
 export default function TranslatePdfPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [processing, setProcessing] = useState(false);
+  const [sourceLang, setSourceLang] = useState('Auto');
   const [targetLang, setTargetLang] = useState('Spanish');
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ current: number; total: number; msg: string } | null>(null);
@@ -46,7 +47,7 @@ export default function TranslatePdfPage() {
         throw new Error('No text found in the PDF. The file may be scanned/image-based.');
       }
 
-      const result = await translateText(fullText, 'Auto', targetLang, (current, total) => {
+      const result = await translateText(fullText, sourceLang, targetLang, (current, total) => {
         setProgress({ current, total, msg: `Translating chunk ${current} of ${total}...` });
       });
 
@@ -57,7 +58,13 @@ export default function TranslatePdfPage() {
       setProcessing(false);
       setProgress(null);
     }
-  }, [files, targetLang]);
+  }, [files, sourceLang, targetLang]);
+
+  const handleDownloadPdf = useCallback(async () => {
+    if (!translated) return;
+    const blob = await createPdfFromText(translated, `Translation (${targetLang})`);
+    downloadBlob(blob, getOutputFilename('translate-pdf', '.pdf'));
+  }, [translated, targetLang]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(translated);
@@ -104,17 +111,41 @@ export default function TranslatePdfPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-foreground mb-2">Translate to</label>
-                <div className="relative max-w-sm">
-                  <select value={targetLang} onChange={(e) => setTargetLang(e.target.value)}
-                    className="w-full appearance-none px-4 py-3 pr-10 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white cursor-pointer">
-                    {LANGUAGES.map(lang => <option key={lang} value={lang}>{lang}</option>)}
-                  </select>
-                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
-                    <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+              <div className="grid sm:grid-cols-2 gap-4 max-w-2xl">
+                <div>
+                  <label className="block text-sm font-semibold text-foreground mb-2">Source language</label>
+                  <div className="relative">
+                    <select value={sourceLang} onChange={(e) => setSourceLang(e.target.value)}
+                      className="w-full appearance-none px-4 py-3 pr-10 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white cursor-pointer">
+                      <option value="Auto">Auto-detect</option>
+                      {LANGUAGES.map(lang => <option key={lang} value={lang}>{lang}</option>)}
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                      <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                    </div>
                   </div>
                 </div>
+                <div>
+                  <label className="block text-sm font-semibold text-foreground mb-2">Translate to</label>
+                  <div className="relative">
+                    <select value={targetLang} onChange={(e) => setTargetLang(e.target.value)}
+                      className="w-full appearance-none px-4 py-3 pr-10 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white cursor-pointer">
+                      {LANGUAGES.map(lang => <option key={lang} value={lang}>{lang}</option>)}
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                      <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 bg-sky-50/60 border border-sky-200 rounded-xl flex items-start gap-2.5">
+                <ShieldAlert className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-sky-800 leading-relaxed">
+                  Unlike the other tools, translation sends the extracted text to a free
+                  public translation service (Lingva / LibreTranslate / MyMemory). Do not
+                  translate confidential documents.
+                </p>
               </div>
 
               {error && (
@@ -152,10 +183,16 @@ export default function TranslatePdfPage() {
             <div className="mt-6 space-y-4 animate-fade-in">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-foreground">Translated to {targetLang}</h3>
-                <button onClick={handleCopy}
-                  className="px-4 py-2 rounded-xl text-sm font-medium border border-border hover:bg-gray-50 transition-colors flex items-center gap-2">
-                  {copied ? <><Check className="w-4 h-4 text-green-500" /> Copied</> : <><Copy className="w-4 h-4" /> Copy</>}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button onClick={handleDownloadPdf}
+                    className="px-4 py-2 rounded-xl text-sm font-medium bg-primary text-white hover:bg-primary-hover transition-colors flex items-center gap-2">
+                    <FileDown className="w-4 h-4" /> Download PDF
+                  </button>
+                  <button onClick={handleCopy}
+                    className="px-4 py-2 rounded-xl text-sm font-medium border border-border hover:bg-gray-50 transition-colors flex items-center gap-2">
+                    {copied ? <><Check className="w-4 h-4 text-green-500" /> Copied</> : <><Copy className="w-4 h-4" /> Copy</>}
+                  </button>
+                </div>
               </div>
 
               <div className="p-6 bg-gray-50 rounded-xl border border-border max-h-[32rem] overflow-y-auto">
